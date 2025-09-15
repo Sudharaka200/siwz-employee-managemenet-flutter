@@ -9,7 +9,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class AttendanceService {
   static String get baseUrl {
-    return dotenv.env['API_URL'] ?? 'API_URL Not Found';  // Fallback to a default
+    return dotenv.env['API_URL'] ?? 'API_URL Not Found';  
   }
 
   static Future<Map<String, dynamic>?> getTodayAttendance() async {

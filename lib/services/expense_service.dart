@@ -1,9 +1,12 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:employee_attendance/services/auth_service.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class ExpenseService {
-  static const String _baseUrl = 'http://localhost:3000/api'; // Match AuthService baseUrl
+    static String get _baseUrl {
+    return dotenv.env['API_URL'] ?? 'API_URL Not Found';  
+  }
 
   static Future<List<Map<String, dynamic>>> getAllExpenseClaims() async {
     try {
