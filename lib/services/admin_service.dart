@@ -1,9 +1,13 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'auth_service.dart'; // Import AuthService
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class AdminService {
-  static const String baseUrl = 'http://localhost:3000/api';
+  static String get baseUrl {
+    return dotenv.env['API_URL'] ?? 'API_URL Not Found';  // Fallback to a default
+  }
 
   static Future<List<Map<String, dynamic>>> getEmployees() async {
     try {

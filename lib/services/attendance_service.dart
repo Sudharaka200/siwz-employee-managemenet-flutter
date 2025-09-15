@@ -5,9 +5,12 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:geocoding/geocoding.dart';
 import 'auth_service.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class AttendanceService {
-  static const String baseUrl = 'http://localhost:3000/api';
+  static String get baseUrl {
+    return dotenv.env['API_URL'] ?? 'API_URL Not Found';  // Fallback to a default
+  }
 
   static Future<Map<String, dynamic>?> getTodayAttendance() async {
     try {

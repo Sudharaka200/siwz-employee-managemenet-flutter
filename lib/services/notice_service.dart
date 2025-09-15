@@ -1,10 +1,13 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'auth_service.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class NoticeService {
-  static const String baseUrl = 'http://localhost:3000/api/notices';
 
+static String get baseUrl {
+    return '${dotenv.env['API_URL'] ?? 'API_URL Not Found'}/notices';
+  }
   // Create a new notice (Admin only)
   static Future<Map<String, dynamic>> createNotice({
     required String title,

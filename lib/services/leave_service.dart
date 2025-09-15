@@ -1,9 +1,12 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'auth_service.dart'; // Import AuthService
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class LeaveService {
-static const String baseUrl = 'http://localhost:3000/api';
+static String get baseUrl {
+    return dotenv.env['API_URL'] ?? 'API_URL Not Found';  // Fallback to a default
+  }
 
 static Future<Map<String, dynamic>> applyLeave(Map<String, dynamic> leaveData) async {
   try {

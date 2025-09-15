@@ -4,6 +4,7 @@ import 'dart:convert';
 import '../utils/theme.dart';
 import '../services/auth_service.dart';
 import '../widgets/loading_widgets.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class LoginScreen extends StatefulWidget {
   @override
@@ -107,6 +108,10 @@ Center(
       },
     ),
   ),
+),
+
+Center(
+  child: Text(dotenv.env['API_URL'] ?? 'API_URL Not Found'),
 ),
 
                     SizedBox(height: 40),

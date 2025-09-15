@@ -1,9 +1,12 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class AuthService {
-  static const String baseUrl = 'http://localhost:3000/api';
+  static String get baseUrl {
+    return dotenv.env['API_URL'] ?? 'API_URL Not Found'; 
+  }
   static String? _token;
   static Map<String, dynamic>? _user;
 

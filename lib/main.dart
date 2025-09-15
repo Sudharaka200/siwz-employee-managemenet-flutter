@@ -15,9 +15,12 @@ import 'screens/admin_notice_screen.dart';
 import 'screens/employee_notice_screen.dart';
 import 'screens/forgot_password_screen.dart';
 import 'screens/reset_password_screen.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
-void main() async {
+
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await dotenv.load(fileName: ".env");
   try {
     debugPrint('Initializing AuthService...');
     await AuthService.init();
