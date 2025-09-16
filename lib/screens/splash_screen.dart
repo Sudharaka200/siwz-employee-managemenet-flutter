@@ -1,38 +1,112 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'dart:async';
 import '../utils/theme.dart';
+import '../services/auth_service.dart';
+import 'package:local_auth/local_auth.dart';
 
 class SplashScreen extends StatefulWidget {
+  const SplashScreen({super.key});
+
   @override
-  _SplashScreenState createState() => _SplashScreenState();
+  State<SplashScreen> createState() => _SplashScreenState();
 }
 
 class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderStateMixin {
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
   late Animation<double> _scaleAnimation;
+  final LocalAuthentication _localAuth = LocalAuthentication();
 
   @override
   void initState() {
     super.initState();
     _animationController = AnimationController(
-      duration: Duration(milliseconds: 2000),
+      duration: const Duration(milliseconds: 2000),
       vsync: this,
     );
-    
+
     _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(parent: _animationController, curve: Curves.easeIn),
     );
-    
+
     _scaleAnimation = Tween<double>(begin: 0.5, end: 1.0).animate(
       CurvedAnimation(parent: _animationController, curve: Curves.elasticOut),
     );
-    
+
     _animationController.forward();
-    
-    Timer(Duration(seconds: 3), () {
-      Navigator.pushReplacementNamed(context, '/login');
-    });
+
+    _checkAuthStatus();
+  }
+
+  Future<void> _checkAuthStatus() async {
+    await Future.wait([
+      _animationController.status.isCompleted
+          ? Future.value()
+          : _animationController.forward(),
+      Future.delayed(const Duration(seconds: 3)),
+    ]);
+
+    if (!mounted) return;
+
+    if (AuthService.isLoggedIn() && await AuthService.verifyToken()) {
+      bool canCheckBiometrics = await _localAuth.canCheckBiometrics;
+      bool isBiometricSupported = await _localAuth.isDeviceSupported();
+
+      if (canCheckBiometrics && isBiometricSupported) {
+        try {
+          bool authenticated = await _localAuth.authenticate(
+            localizedReason: 'Authenticate to access SWIZTECH Attendance',
+            options: const AuthenticationOptions(
+              useErrorDialogs: true,
+              stickyAuth: true,
+              biometricOnly: true,
+            ),
+          );
+
+          if (authenticated) {
+            final user = AuthService.getUser();
+            final isAdmin = user?['role'] == 'admin';
+            debugPrint('SplashScreen: Biometric authentication successful, admin: $isAdmin');
+            if (mounted) {
+              Navigator.pushReplacementNamed(
+                context,
+                isAdmin ? '/admin' : '/dashboard',
+              );
+            }
+          } else {
+            debugPrint('SplashScreen: Biometric authentication failed');
+            await AuthService.clearAuthData();
+            if (mounted) {
+              Navigator.pushReplacementNamed(context, '/login');
+            }
+          }
+        } catch (e) {
+          debugPrint('Biometric authentication error: $e');
+          await AuthService.clearAuthData();
+          if (mounted) {
+            Navigator.pushReplacementNamed(context, '/login');
+          }
+        }
+      } else {
+        debugPrint('SplashScreen: Biometrics not supported or unavailable');
+        final user = AuthService.getUser();
+        final isAdmin = user?['role'] == 'admin';
+        debugPrint('SplashScreen: User logged in, admin: $isAdmin');
+        if (mounted) {
+          Navigator.pushReplacementNamed(
+            context,
+            isAdmin ? '/admin' : '/dashboard',
+          );
+        }
+      }
+    } else {
+      await AuthService.clearAuthData();
+      debugPrint('SplashScreen: User not logged in or invalid token');
+      if (mounted) {
+        Navigator.pushReplacementNamed(context, '/login');
+      }
+    }
   }
 
   @override
@@ -72,7 +146,7 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
                         decoration: BoxDecoration(
                           color: Colors.white,
                           borderRadius: BorderRadius.circular(25),
-                          boxShadow: [
+                          boxShadow: const [
                             BoxShadow(
                               color: Colors.black26,
                               blurRadius: 20,
@@ -86,7 +160,8 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
                             'https://i.postimg.cc/zGmmJCf3/Rectangle-1.png',
                             fit: BoxFit.contain,
                             errorBuilder: (context, error, stackTrace) {
-                              return Icon(
+                              debugPrint('Error loading splash image: $error');
+                              return const Icon(
                                 Icons.business,
                                 size: 60,
                                 color: AppTheme.primaryBlue,
@@ -99,10 +174,10 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
                   );
                 },
               ),
-              SizedBox(height: 40),
+              const SizedBox(height: 40),
               FadeTransition(
                 opacity: _fadeAnimation,
-                child: Text(
+                child: const Text(
                   'SWIZTECH',
                   style: TextStyle(
                     fontSize: 32,
@@ -112,47 +187,18 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
                   ),
                 ),
               ),
-              SizedBox(height: 20),
+              const SizedBox(height: 20),
               FadeTransition(
                 opacity: _fadeAnimation,
                 child: Container(
-                  padding: EdgeInsets.symmetric(horizontal: 40),
-                  child: Text(
+                  padding: const EdgeInsets.symmetric(horizontal: 40),
+                  child: const Text(
                     'Precision Attendance in Your Pocket',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 18,
-                      color: Colors.white.withOpacity(0.9),
+                      color: Colors.white70,
                       fontWeight: FontWeight.w300,
-                    ),
-                  ),
-                ),
-              ),
-              SizedBox(height: 60),
-              FadeTransition(
-                opacity: _fadeAnimation,
-                child: Container(
-                  width: 200,
-                  child: ElevatedButton(
-                    onPressed: () {
-                      Navigator.pushReplacementNamed(context, '/login');
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.white,
-                      foregroundColor: AppTheme.primaryBlue,
-                      elevation: 5,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(25),
-                      ),
-                      padding: EdgeInsets.symmetric(vertical: 16),
-                    ),
-                    child: Text(
-                      'GET STARTED',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 1,
-                      ),
                     ),
                   ),
                 ),
