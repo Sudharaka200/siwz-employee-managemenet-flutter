@@ -11,6 +11,7 @@ import 'package:employee_attendance/screens/expense_claims_screen.dart';
 import 'package:employee_attendance/screens/profile_screen.dart';
 import 'package:employee_attendance/utils/theme.dart';
 import 'package:employee_attendance/services/auth_service.dart';
+import 'package:shared_preferences/shared_preferences.dart'; 
 import 'screens/admin_notice_screen.dart';
 import 'screens/employee_notice_screen.dart';
 import 'screens/forgot_password_screen.dart';
@@ -32,6 +33,20 @@ Future<void> main() async {
 }
 
 class MyApp extends StatelessWidget {
+
+  Future<bool> _checkLoginStatus() async {
+    final prefs = await SharedPreferences.getInstance();
+    final isLoggedIn = prefs.getBool('is_logged_in') ?? false;
+    final token = prefs.getString('jwt_token'); // Changed to jwt_token for consistency with AuthService
+
+    if (isLoggedIn && token != null) {
+      // Validate token with backend for security
+      final isValid = await AuthService.validateToken();
+      return isLoggedIn && isValid;
+    }
+    return false;
+  }
+
   @override
   Widget build(BuildContext context) {
     SystemChrome.setSystemUIOverlayStyle(

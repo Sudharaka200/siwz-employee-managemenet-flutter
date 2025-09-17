@@ -27,11 +27,6 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
   bool _isLocationLoading = true;
   Set<Marker> _markers = {};
 
-  Future<void> _loadCurrentUser() async {
-    setState(() {
-      _currentUser = AuthService.getUser();
-    });
-  }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
@@ -39,6 +34,12 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
       _loadTodayAttendance(); // Reload attendance data
       _loadCurrentUser(); // Reload user data when app resumes
     }
+  }
+
+  Future<void> _loadCurrentUser() async {
+    setState(() {
+      _currentUser = AuthService.user; // Changed from getUser()
+    });
   }
 
   @override

@@ -4,9 +4,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class AuthService {
+  // Base URL from .env
   static String get baseUrl {
-    return dotenv.env['API_URL'] ?? 'API_URL Not Found'; 
+    return dotenv.env['API_URL'] ?? 'http://localhost:3000/api'; // Fallback URL
   }
+
   static String? _token;
   static Map<String, dynamic>? _user;
 
@@ -20,14 +22,13 @@ class AuthService {
     }
   }
 
-  static String? getToken() {
-    return _token;
-  }
+  // Get token
+  static String? get token => _token;
 
-  static Map<String, dynamic>? getUser() {
-    return _user;
-  }
+  // Get user data
+  static Map<String, dynamic>? get user => _user;
 
+  // Get headers for API requests
   static Map<String, String> getAuthHeaders() {
     return {
       'Content-Type': 'application/json',
@@ -35,67 +36,94 @@ class AuthService {
     };
   }
 
-  static Future<Map<String, dynamic>> login(String employeeId, String password) async {
+  // Login method
+  static Future<Map<String, dynamic>> login(String email, String password) async {
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/auth/login'),
+        Uri.parse('$baseUrl/login'),
         headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'employeeId': employeeId,
-          'password': password,
-        }),
+        body: jsonEncode({'email': email, 'password': password}),
       );
 
-      final responseBody = jsonDecode(response.body);
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        _token = data['token'];
+        _user = data['user']; // Assuming backend returns user data
 
-      if (response.statusCode == 200 && responseBody['success']) {
-        _token = responseBody['token'];
-        _user = responseBody['user'];
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString('jwt_token', _token!);
-        await prefs.setString('user_data', jsonEncode(_user));
+        await prefs.setBool('is_logged_in', true);
+        if (_user != null) {
+          await prefs.setString('user_data', jsonEncode(_user));
+        }
+
         return {'success': true, 'user': _user};
       } else {
-        return {'success': false, 'message': responseBody['message'] ?? 'Login failed'};
+        final error = jsonDecode(response.body)['message'] ?? 'Login failed';
+        return {'success': false, 'message': error};
       }
     } catch (e) {
-      print('Login network error: $e');
-      return {'success': false, 'message': 'Network error. Please check your connection and backend server.'};
+      print('Login error: $e');
+      return {'success': false, 'message': 'Network error: $e'};
     }
   }
 
+  // Logout method
   static Future<Map<String, dynamic>> logout() async {
     try {
-      final response = await http.post(
-        Uri.parse('$baseUrl/auth/logout'),
-        headers: getAuthHeaders(),
-      );
+      // Optional: Call backend logout endpoint if required
+      // final response = await http.post(
+      //   Uri.parse('$baseUrl/logout'),
+      //   headers: getAuthHeaders(),
+      // );
+      // if (response.statusCode != 200) {
+      //   return {'success': false, 'message': 'Logout failed'};
+      // }
 
-      final responseBody = jsonDecode(response.body);
-
-      if (response.statusCode == 200 && responseBody['success']) {
-        await _clearAuthData();
-        return {'success': true, 'message': 'Logged out successfully'};
-      } else {
-        return {'success': false, 'message': responseBody['message'] ?? 'Logout failed'};
-      }
+      await _clearAuthData();
+      return {'success': true, 'message': 'Logged out successfully'};
     } catch (e) {
-      print('Logout network error: $e');
-      return {'success': false, 'message': 'Network error'};
+      print('Logout error: $e');
+      return {'success': false, 'message': 'Logout error: $e'};
     }
   }
 
+  // Clear local auth data
   static Future<void> _clearAuthData() async {
     _token = null;
     _user = null;
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('jwt_token');
     await prefs.remove('user_data');
+    await prefs.setBool('is_logged_in', false);
   }
 
+  // Update user data locally
   static Future<void> updateUserLocally(Map<String, dynamic> newUser) async {
     _user = newUser;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('user_data', jsonEncode(_user));
+  }
+
+  // Validate token with backend
+  static Future<bool> validateToken() async {
+    if (_token == null) return false;
+
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/profile'), // Adjust endpoint as needed
+        headers: getAuthHeaders(),
+      );
+      if (response.statusCode == 200) {
+        return true;
+      } else {
+        await _clearAuthData();
+        return false;
+      }
+    } catch (e) {
+      print('Token validation error: $e');
+      await _clearAuthData();
+      return false;
+    }
   }
 }

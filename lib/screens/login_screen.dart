@@ -14,7 +14,6 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin {
   final _formKey = GlobalKey<FormState>();
   final _employeeIdController = TextEditingController();
-  final _passwordController = TextEditingController();
   bool _isLoading = false;
   bool _obscurePassword = true;
   bool _isValidating = false;
@@ -22,6 +21,25 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
   late AnimationController _slideController;
   late Animation<double> _fadeAnimation;
   late Animation<Offset> _slideAnimation;
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
+
+  Future<void> _handleLogin() async {
+    final result = await AuthService.login(
+      _emailController.text,
+      _passwordController.text,
+    );
+    if (result['success']) {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => DashboardScreen()), // Use DashboardScreen
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(result['message'])),
+      );
+    }
+  }
 
   @override
   void initState() {
@@ -330,46 +348,46 @@ Center(
     );
   }
 
-  Future<void> _handleLogin() async {
-    if (!_formKey.currentState!.validate()) {
-      setState(() => _isValidating = true);
-      await Future.delayed(Duration(milliseconds: 500));
-      setState(() => _isValidating = false);
-      return;
-    }
+  // Future<void> _handleLogin() async {
+  //   if (!_formKey.currentState!.validate()) {
+  //     setState(() => _isValidating = true);
+  //     await Future.delayed(Duration(milliseconds: 500));
+  //     setState(() => _isValidating = false);
+  //     return;
+  //   }
 
-    setState(() {
-      _isLoading = true;
-    });
+  //   setState(() {
+  //     _isLoading = true;
+  //   });
 
-    try {
-      await Future.delayed(Duration(milliseconds: 300));
+  //   try {
+  //     await Future.delayed(Duration(milliseconds: 300));
       
-      final response = await AuthService.login(
-        _employeeIdController.text,
-        _passwordController.text,
-      );
+  //     final response = await AuthService.login(
+  //       _employeeIdController.text,
+  //       _passwordController.text,
+  //     );
 
-      if (response['success']) {
-        await Future.delayed(Duration(milliseconds: 500));
+  //     if (response['success']) {
+  //       await Future.delayed(Duration(milliseconds: 500));
         
-        final userRole = response['user']['role'];
-        if (userRole == 'admin' || userRole == 'hr') {
-          Navigator.pushReplacementNamed(context, '/admin');
-        } else {
-          Navigator.pushReplacementNamed(context, '/dashboard');
-        }
-      } else {
-        _showErrorDialog(response['message']);
-      }
-    } catch (e) {
-      _showErrorDialog('Login failed. Please try again.');
-    } finally {
-      setState(() {
-        _isLoading = false;
-      });
-    }
-  }
+  //       final userRole = response['user']['role'];
+  //       if (userRole == 'admin' || userRole == 'hr') {
+  //         Navigator.pushReplacementNamed(context, '/admin');
+  //       } else {
+  //         Navigator.pushReplacementNamed(context, '/dashboard');
+  //       }
+  //     } else {
+  //       _showErrorDialog(response['message']);
+  //     }
+  //   } catch (e) {
+  //     _showErrorDialog('Login failed. Please try again.');
+  //   } finally {
+  //     setState(() {
+  //       _isLoading = false;
+  //     });
+  //   }
+  // }
 
   void _showErrorDialog(String message) {
     showDialog(

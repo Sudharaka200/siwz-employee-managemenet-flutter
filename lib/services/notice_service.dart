@@ -1,13 +1,13 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
-import 'auth_service.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'auth_service.dart';
 
 class NoticeService {
-
-static String get baseUrl {
-    return '${dotenv.env['API_URL'] ?? 'API_URL Not Found'}/notices';
+  static String get baseUrl {
+    return '${dotenv.env['API_URL'] ?? 'http://localhost:3000/api'}/notices';
   }
+
   // Create a new notice (Admin only)
   static Future<Map<String, dynamic>> createNotice({
     required String title,
@@ -18,7 +18,7 @@ static String get baseUrl {
     String targetAudience = 'all',
   }) async {
     try {
-      final token = await AuthService.getToken();
+      final token = AuthService.token; // Changed from getToken()
       if (token == null) {
         throw Exception('No authentication token found');
       }
@@ -29,7 +29,7 @@ static String get baseUrl {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $token',
         },
-        body: json.encode({
+        body: jsonEncode({
           'title': title,
           'message': message,
           'priority': priority,
@@ -39,8 +39,8 @@ static String get baseUrl {
         }),
       );
 
-      final data = json.decode(response.body);
-      
+      final data = jsonDecode(response.body);
+
       if (response.statusCode == 201) {
         return data;
       } else {
@@ -60,7 +60,7 @@ static String get baseUrl {
     String? category,
   }) async {
     try {
-      final token = await AuthService.getToken();
+      final token = AuthService.token; // Changed from getToken()
       if (token == null) {
         throw Exception('No authentication token found');
       }
@@ -76,8 +76,8 @@ static String get baseUrl {
         },
       );
 
-      final data = json.decode(response.body);
-      
+      final data = jsonDecode(response.body);
+
       if (response.statusCode == 200) {
         return data;
       } else {
@@ -96,7 +96,7 @@ static String get baseUrl {
     String? status,
   }) async {
     try {
-      final token = await AuthService.getToken();
+      final token = AuthService.token; // Changed from getToken()
       if (token == null) {
         throw Exception('No authentication token found');
       }
@@ -111,8 +111,8 @@ static String get baseUrl {
         },
       );
 
-      final data = json.decode(response.body);
-      
+      final data = jsonDecode(response.body);
+
       if (response.statusCode == 200) {
         return data;
       } else {
@@ -127,7 +127,7 @@ static String get baseUrl {
   // Mark notice as read
   static Future<void> markNoticeAsRead(String noticeId) async {
     try {
-      final token = await AuthService.getToken();
+      final token = AuthService.token; // Changed from getToken()
       if (token == null) {
         throw Exception('No authentication token found');
       }
@@ -140,7 +140,7 @@ static String get baseUrl {
       );
 
       if (response.statusCode != 200) {
-        final data = json.decode(response.body);
+        final data = jsonDecode(response.body);
         throw Exception(data['message'] ?? 'Failed to mark notice as read');
       }
     } catch (e) {
@@ -155,7 +155,7 @@ static String get baseUrl {
     Map<String, dynamic> updates,
   ) async {
     try {
-      final token = await AuthService.getToken();
+      final token = AuthService.token; // Changed from getToken()
       if (token == null) {
         throw Exception('No authentication token found');
       }
@@ -166,11 +166,11 @@ static String get baseUrl {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $token',
         },
-        body: json.encode(updates),
+        body: jsonEncode(updates),
       );
 
-      final data = json.decode(response.body);
-      
+      final data = jsonDecode(response.body);
+
       if (response.statusCode == 200) {
         return data;
       } else {
@@ -185,7 +185,7 @@ static String get baseUrl {
   // Delete notice (Admin only)
   static Future<void> deleteNotice(String noticeId) async {
     try {
-      final token = await AuthService.getToken();
+      final token = AuthService.token; // Changed from getToken()
       if (token == null) {
         throw Exception('No authentication token found');
       }
@@ -198,7 +198,7 @@ static String get baseUrl {
       );
 
       if (response.statusCode != 200) {
-        final data = json.decode(response.body);
+        final data = jsonDecode(response.body);
         throw Exception(data['message'] ?? 'Failed to delete notice');
       }
     } catch (e) {
@@ -210,7 +210,7 @@ static String get baseUrl {
   // Get notice statistics (Admin only)
   static Future<Map<String, dynamic>> getNoticeStats() async {
     try {
-      final token = await AuthService.getToken();
+      final token = AuthService.token; // Changed from getToken()
       if (token == null) {
         throw Exception('No authentication token found');
       }
@@ -222,8 +222,8 @@ static String get baseUrl {
         },
       );
 
-      final data = json.decode(response.body);
-      
+      final data = jsonDecode(response.body);
+
       if (response.statusCode == 200) {
         return data;
       } else {

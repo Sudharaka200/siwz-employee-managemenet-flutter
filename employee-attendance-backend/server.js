@@ -3,6 +3,8 @@ const mongoose = require("mongoose")
 const cors = require("cors")
 const dotenv = require("dotenv")
 
+const JWT_SECRET = 'lmkhgvuqlwneduyyqtgdhqbdjadaddmkapoqknqj2nje3qq3d';
+
 // Load environment variables
 dotenv.config()
 
