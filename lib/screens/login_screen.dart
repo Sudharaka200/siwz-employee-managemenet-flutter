@@ -34,17 +34,72 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
       duration: Duration(milliseconds: 600),
       vsync: this,
     );
-    
+
     _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(parent: _fadeController, curve: Curves.easeInOut),
     );
     _slideAnimation = Tween<Offset>(begin: Offset(0, 0.3), end: Offset.zero).animate(
       CurvedAnimation(parent: _slideController, curve: Curves.easeOutCubic),
     );
-    
+
     // Start animations when screen loads
     _fadeController.forward();
     _slideController.forward();
+  }
+
+  Future<void> _handleLogin() async {
+    if (!_formKey.currentState!.validate()) {
+      setState(() => _isValidating = true);
+      await Future.delayed(Duration(milliseconds: 500));
+      setState(() => _isValidating = false);
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final response = await AuthService.login(
+        _employeeIdController.text.trim(),
+        _passwordController.text,
+        // Optionally pass device info: 'Mobile Device'
+      );
+
+      if (response['success']) {
+        final userRole = response['user']['role'];
+        Navigator.pushReplacementNamed(
+          context,
+          (userRole == 'admin' || userRole == 'hr') ? '/admin' : '/dashboard',
+        );
+      } else {
+        _showErrorDialog(response['message']);
+      }
+    } catch (e) {
+      _showErrorDialog('Network error. Please check your connection.');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  void _showErrorDialog(String message) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Login Error'),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('OK'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -64,56 +119,54 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     SizedBox(height: 40),
-                   Center(
-  child: Container(
-    height: 120,
-    child: Image.network(
-      'https://i.postimg.cc/TPV5kJKb/Frame-3.png',
-      errorBuilder: (context, error, stackTrace) {
-        return Container(
-          height: 120,
-          decoration: BoxDecoration(
-            color: AppTheme.lightBlue,
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Icon(
-            Icons.people,
-            size: 60,
-            color: AppTheme.primaryBlue,
-          ),
-        );
-      },
-    ),
-  ),
-),
-              SizedBox(height: 40),
-Center(
-  child: Container(
-    height: 120,
-    child: Image.network(
-      'https://i.postimg.cc/sgPLsb80/Peoples.png',
-      errorBuilder: (context, error, stackTrace) {
-        return Container(
-          height: 120,
-          decoration: BoxDecoration(
-            color: AppTheme.lightBlue,
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Icon(
-            Icons.people,
-            size: 60,
-            color: AppTheme.primaryBlue,
-          ),
-        );
-      },
-    ),
-  ),
-),
-
-Center(
-  child: Text(dotenv.env['API_URL'] ?? 'API_URL Not Found'),
-),
-
+                    Center(
+                      child: Container(
+                        height: 120,
+                        child: Image.network(
+                          'https://i.postimg.cc/TPV5kJKb/Frame-3.png',
+                          errorBuilder: (context, error, stackTrace) {
+                            return Container(
+                              height: 120,
+                              decoration: BoxDecoration(
+                                color: AppTheme.lightBlue,
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Icon(
+                                Icons.people,
+                                size: 60,
+                                color: AppTheme.primaryBlue,
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+                    SizedBox(height: 40),
+                    Center(
+                      child: Container(
+                        height: 120,
+                        child: Image.network(
+                          'https://i.postimg.cc/sgPLsb80/Peoples.png',
+                          errorBuilder: (context, error, stackTrace) {
+                            return Container(
+                              height: 120,
+                              decoration: BoxDecoration(
+                                color: AppTheme.lightBlue,
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Icon(
+                                Icons.people,
+                                size: 60,
+                                color: AppTheme.primaryBlue,
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+                    Center(
+                      child: Text(dotenv.env['API_URL'] ?? 'API_URL Not Found'),
+                    ),
                     SizedBox(height: 40),
                     TweenAnimationBuilder(
                       duration: Duration(milliseconds: 600),
@@ -167,12 +220,12 @@ Center(
                                     decoration: InputDecoration(
                                       labelText: 'Employee ID',
                                       prefixIcon: Icon(Icons.badge, color: AppTheme.primaryBlue),
-                                      suffixIcon: _isValidating 
-                                        ? Padding(
-                                            padding: EdgeInsets.all(12),
-                                            child: LoadingWidgets.primaryLoader(size: 20),
-                                          )
-                                        : null,
+                                      suffixIcon: _isValidating
+                                          ? Padding(
+                                              padding: EdgeInsets.all(12),
+                                              child: LoadingWidgets.primaryLoader(size: 20),
+                                            )
+                                          : null,
                                     ),
                                     validator: (value) {
                                       if (value == null || value.isEmpty) {
@@ -219,11 +272,13 @@ Center(
                                               _obscurePassword ? Icons.visibility : Icons.visibility_off,
                                               color: AppTheme.primaryBlue,
                                             ),
-                                            onPressed: _isLoading ? null : () {
-                                              setState(() {
-                                                _obscurePassword = !_obscurePassword;
-                                              });
-                                            },
+                                            onPressed: _isLoading
+                                                ? null
+                                                : () {
+                                                    setState(() {
+                                                      _obscurePassword = !_obscurePassword;
+                                                    });
+                                                  },
                                           ),
                                         ],
                                       ),
@@ -249,9 +304,11 @@ Center(
                                 child: Align(
                                   alignment: Alignment.centerRight,
                                   child: TextButton(
-                                    onPressed: _isLoading ? null : () {
-                                      Navigator.pushNamed(context, '/forgot-password');
-                                    },
+                                    onPressed: _isLoading
+                                        ? null
+                                        : () {
+                                            Navigator.pushNamed(context, '/forgot-password');
+                                          },
                                     child: Text(
                                       'Forgot Password?',
                                       style: TextStyle(color: AppTheme.primaryBlue),
@@ -284,105 +341,12 @@ Center(
                         ],
                       ),
                     ),
-                    // SizedBox(height: 40),
-                    // TweenAnimationBuilder(
-                    //   duration: Duration(milliseconds: 800),
-                    //   tween: Tween<double>(begin: 0, end: 1),
-                    //   builder: (context, double value, child) {
-                    //     return Transform.translate(
-                    //       offset: Offset(0, 30 * (1 - value)),
-                    //       child: Opacity(
-                    //         opacity: value,
-                    //         child: Container(
-                    //           padding: EdgeInsets.all(16),
-                    //           decoration: BoxDecoration(
-                    //             color: AppTheme.lightBlue,
-                    //             borderRadius: BorderRadius.circular(12),
-                    //           ),
-                    //           child: Column(
-                    //             crossAxisAlignment: CrossAxisAlignment.start,
-                    //             children: [
-                    //               Text(
-                    //                 'Demo Credentials:',
-                    //                 style: TextStyle(
-                    //                   fontWeight: FontWeight.bold,
-                    //                   color: AppTheme.darkGray,
-                    //                 ),
-                    //               ),
-                    //               SizedBox(height: 8),
-                    //               Text('Admin: admin123 / admin@123'),
-                    //               Text('HR: hr123 / hr@123'),
-                    //               Text('Employee: emp001 / emp@123'),
-                    //             ],
-                    //           ),
-                    //         ),
-                    //       ),
-                    //     );
-                    //   },
-                    // ),
                   ],
                 ),
               ),
             ),
           ),
         ),
-      ),
-    );
-  }
-
-  Future<void> _handleLogin() async {
-    if (!_formKey.currentState!.validate()) {
-      setState(() => _isValidating = true);
-      await Future.delayed(Duration(milliseconds: 500));
-      setState(() => _isValidating = false);
-      return;
-    }
-
-    setState(() {
-      _isLoading = true;
-    });
-
-    try {
-      await Future.delayed(Duration(milliseconds: 300));
-      
-      final response = await AuthService.login(
-        _employeeIdController.text,
-        _passwordController.text,
-      );
-
-      if (response['success']) {
-        await Future.delayed(Duration(milliseconds: 500));
-        
-        final userRole = response['user']['role'];
-        if (userRole == 'admin' || userRole == 'hr') {
-          Navigator.pushReplacementNamed(context, '/admin');
-        } else {
-          Navigator.pushReplacementNamed(context, '/dashboard');
-        }
-      } else {
-        _showErrorDialog(response['message']);
-      }
-    } catch (e) {
-      _showErrorDialog('Login failed. Please try again.');
-    } finally {
-      setState(() {
-        _isLoading = false;
-      });
-    }
-  }
-
-  void _showErrorDialog(String message) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Login Error'),
-        content: Text(message),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text('OK'),
-          ),
-        ],
       ),
     );
   }

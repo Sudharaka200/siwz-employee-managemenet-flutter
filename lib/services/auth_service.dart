@@ -5,7 +5,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class AuthService {
   static String get baseUrl {
-    return dotenv.env['API_URL'] ?? 'API_URL Not Found'; 
+    return dotenv.env['API_URL'] ?? 'API_URL Not Found';
   }
   static String? _token;
   static Map<String, dynamic>? _user;
@@ -35,7 +35,8 @@ class AuthService {
     };
   }
 
-  static Future<Map<String, dynamic>> login(String employeeId, String password) async {
+  // Login and save token
+  static Future<Map<String, dynamic>> login(String employeeId, String password, [String? deviceInfo]) async {
     try {
       final response = await http.post(
         Uri.parse('$baseUrl/auth/login'),
@@ -43,6 +44,7 @@ class AuthService {
         body: jsonEncode({
           'employeeId': employeeId,
           'password': password,
+          if (deviceInfo != null) 'deviceInfo': deviceInfo, // Optional device info
         }),
       );
 
@@ -60,10 +62,43 @@ class AuthService {
       }
     } catch (e) {
       print('Login network error: $e');
-      return {'success': false, 'message': 'Network error. Please check your connection and backend server.'};
+      return {'success': false, 'message': 'Network error. Please check your connection.'};
     }
   }
 
+  // Verify token with backend
+  static Future<Map<String, dynamic>> verifyToken([String? deviceInfo]) async {
+    try {
+      final token = getToken();
+      if (token == null) {
+        return {'success': false, 'message': 'No token found'};
+      }
+
+      final response = await http.post(
+        Uri.parse('$baseUrl/auth/verifyToken'),
+        headers: getAuthHeaders(),
+        body: deviceInfo != null ? jsonEncode({'deviceInfo': deviceInfo}) : null,
+      );
+
+      final responseBody = jsonDecode(response.body);
+
+      if (response.statusCode == 200 && responseBody['success']) {
+        _user = responseBody['user'];
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('user_data', jsonEncode(_user));
+        return {'success': true, 'user': _user};
+      } else {
+        await _clearAuthData(); // Clear invalid token
+        return {'success': false, 'message': responseBody['message'] ?? 'Invalid or expired token'};
+      }
+    } catch (e) {
+      print('Token verification error: $e');
+      await _clearAuthData(); // Clear on network error to avoid stale tokens
+      return {'success': false, 'message': 'Network error. Please check your connection.'};
+    }
+  }
+
+  // Logout
   static Future<Map<String, dynamic>> logout() async {
     try {
       final response = await http.post(
@@ -73,18 +108,19 @@ class AuthService {
 
       final responseBody = jsonDecode(response.body);
 
-      if (response.statusCode == 200 && responseBody['success']) {
-        await _clearAuthData();
-        return {'success': true, 'message': 'Logged out successfully'};
-      } else {
-        return {'success': false, 'message': responseBody['message'] ?? 'Logout failed'};
-      }
+      await _clearAuthData(); // Always clear local data on logout
+      return {
+        'success': response.statusCode == 200 && responseBody['success'],
+        'message': responseBody['message'] ?? 'Logout failed'
+      };
     } catch (e) {
       print('Logout network error: $e');
+      await _clearAuthData(); // Clear local data even on error
       return {'success': false, 'message': 'Network error'};
     }
   }
 
+  // Clear authentication data
   static Future<void> _clearAuthData() async {
     _token = null;
     _user = null;
@@ -93,6 +129,7 @@ class AuthService {
     await prefs.remove('user_data');
   }
 
+  // Update user data locally
   static Future<void> updateUserLocally(Map<String, dynamic> newUser) async {
     _user = newUser;
     final prefs = await SharedPreferences.getInstance();

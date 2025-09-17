@@ -111,7 +111,7 @@ const initializeUsers = async () => {
       employeeId: "admin123",
       name: "System Administrator",
       email: "admin@swiztech.com",
-      password: "admin@123",
+      password: "admin@1234",
       role: "admin",
       department: "Information Technology",
       designation: "System Administrator",

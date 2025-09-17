@@ -9,7 +9,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class AttendanceService {
   static String get baseUrl {
-    return dotenv.env['API_URL'] ?? 'API_URL Not Found';  
+    return dotenv.env['API_URL'] ?? 'API_URL Not Found';
   }
 
   static Future<Map<String, dynamic>?> getTodayAttendance() async {
@@ -26,6 +26,24 @@ class AttendanceService {
       return null;
     } catch (e) {
       print('Error getting today attendance: $e');
+      return null;
+    }
+  }
+
+  static Future<Map<String, dynamic>?> getAttendanceForDate(String date) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/attendance/date/$date'),
+        headers: AuthService.getAuthHeaders(),
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data['attendance'];
+      }
+      return null;
+    } catch (e) {
+      print('Error getting attendance for $date: $e');
       return null;
     }
   }
@@ -176,29 +194,24 @@ class AttendanceService {
       
       List<String> addressParts = [];
       
-      // Build street address
       if (subStreet != null && street != null) {
         addressParts.add('$subStreet $street');
       } else if (street != null) {
         addressParts.add(street);
       }
       
-      // Add area/neighborhood
       if (area != null) {
         addressParts.add(area);
       }
       
-      // Add city
       if (city != null) {
         addressParts.add(city);
       }
       
-      // Add state if different from city
       if (state != null && state != city) {
         addressParts.add(state);
       }
       
-      // Add country if available
       if (country != null && addressParts.length < 3) {
         addressParts.add(country);
       }
@@ -209,7 +222,6 @@ class AttendanceService {
         return finalAddress;
       }
       
-      // Fallback to place name if available and meaningful
       if (name != null && 
           name != 'Unnamed Road' && 
           !name.contains('+') && 

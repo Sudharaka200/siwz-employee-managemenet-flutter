@@ -23,7 +23,8 @@ class _AdminDashboardState extends State<AdminDashboard> with TickerProviderStat
   bool _isLoading = true;
   bool _isRefreshing = false;
   String _errorMessage = '';
-  
+  Map<String, dynamic>? _user; // Store user data from AuthService
+
   late AnimationController _fadeController;
   late AnimationController _slideController;
   late Animation<double> _fadeAnimation;
@@ -32,6 +33,7 @@ class _AdminDashboardState extends State<AdminDashboard> with TickerProviderStat
   @override
   void initState() {
     super.initState();
+    _user = AuthService.getUser(); // Get user data on init
     _fadeController = AnimationController(
       duration: Duration(milliseconds: 800),
       vsync: this,
@@ -40,18 +42,19 @@ class _AdminDashboardState extends State<AdminDashboard> with TickerProviderStat
       duration: Duration(milliseconds: 600),
       vsync: this,
     );
-    
+
     _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(parent: _fadeController, curve: Curves.easeInOut),
     );
     _slideAnimation = Tween<Offset>(begin: Offset(0, 0.3), end: Offset.zero).animate(
       CurvedAnimation(parent: _slideController, curve: Curves.easeOutCubic),
     );
-    
+
     _loadData();
   }
 
   Future<void> _loadData() async {
+    if (!mounted) return;
     setState(() => _isLoading = true);
     try {
       await Future.wait([
@@ -61,9 +64,10 @@ class _AdminDashboardState extends State<AdminDashboard> with TickerProviderStat
         _loadExpenseClaims(),
         _loadDepartments(),
       ]);
-      
+
       _fadeController.forward();
       _slideController.forward();
+      setState(() => _errorMessage = '');
     } catch (e) {
       setState(() {
         _errorMessage = 'Failed to load data: ${e.toString()}';
@@ -72,24 +76,31 @@ class _AdminDashboardState extends State<AdminDashboard> with TickerProviderStat
         SnackBar(content: Text(_errorMessage)),
       );
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
   Future<void> _handleRefresh() async {
+    if (!mounted) return;
     setState(() => _isRefreshing = true);
     _fadeController.reset();
     _slideController.reset();
     await _loadData();
-    setState(() => _isRefreshing = false);
+    if (mounted) {
+      setState(() => _isRefreshing = false);
+    }
   }
 
   Future<void> _loadEmployees() async {
     try {
       final employees = await AdminService.getEmployees();
-      setState(() {
-        _employees = employees;
-      });
+      if (mounted) {
+        setState(() {
+          _employees = employees;
+        });
+      }
     } catch (e) {
       print('Error loading employees: $e');
       ScaffoldMessenger.of(context).showSnackBar(
@@ -101,9 +112,11 @@ class _AdminDashboardState extends State<AdminDashboard> with TickerProviderStat
   Future<void> _loadAttendanceRecords() async {
     try {
       final records = await AdminService.getAttendanceRecords();
-      setState(() {
-        _attendanceRecords = records;
-      });
+      if (mounted) {
+        setState(() {
+          _attendanceRecords = records;
+        });
+      }
     } catch (e) {
       print('Error loading attendance records: $e');
       ScaffoldMessenger.of(context).showSnackBar(
@@ -115,9 +128,11 @@ class _AdminDashboardState extends State<AdminDashboard> with TickerProviderStat
   Future<void> _loadLeaveRequests() async {
     try {
       final requests = await LeaveService.getAllLeaveRequests();
-      setState(() {
-        _leaveRequests = requests;
-      });
+      if (mounted) {
+        setState(() {
+          _leaveRequests = requests;
+        });
+      }
     } catch (e) {
       print('Error loading leave requests: $e');
       ScaffoldMessenger.of(context).showSnackBar(
@@ -131,14 +146,40 @@ class _AdminDashboardState extends State<AdminDashboard> with TickerProviderStat
       final claims = await ExpenseService.getAllExpenseClaims();
       print("Fetched expense claims: $claims");
       print("Number of claims: ${claims.length}");
-      setState(() {
-        _expenseClaims = claims.isEmpty ? [{'_id': 'temp', 'employeeName': 'No Data', 'expenseType': 'N/A', 'amount': 0.0, 'claimDate': DateTime.now().toIso8601String(), 'status': 'N/A', 'description': 'No claims available'}] : claims;
-      });
+      if (mounted) {
+        setState(() {
+          _expenseClaims = claims.isEmpty
+              ? [
+                  {
+                    '_id': 'temp',
+                    'employeeName': 'No Data',
+                    'expenseType': 'N/A',
+                    'amount': 0.0,
+                    'claimDate': DateTime.now().toIso8601String(),
+                    'status': 'N/A',
+                    'description': 'No claims available'
+                  }
+                ]
+              : claims;
+        });
+      }
     } catch (e) {
       print('Error loading expense claims: $e');
-      setState(() {
-        _expenseClaims = [{'_id': 'error', 'employeeName': 'Error', 'expenseType': 'N/A', 'amount': 0.0, 'claimDate': DateTime.now().toIso8601String(), 'status': 'N/A', 'description': 'Failed to load: ${e.toString()}'}];
-      });
+      if (mounted) {
+        setState(() {
+          _expenseClaims = [
+            {
+              '_id': 'error',
+              'employeeName': 'Error',
+              'expenseType': 'N/A',
+              'amount': 0.0,
+              'claimDate': DateTime.now().toIso8601String(),
+              'status': 'N/A',
+              'description': 'Failed to load: ${e.toString()}'
+            }
+          ];
+        });
+      }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Failed to load expense claims: ${e.toString()}')),
       );
@@ -146,28 +187,31 @@ class _AdminDashboardState extends State<AdminDashboard> with TickerProviderStat
   }
 
   Future<void> _loadDepartments() async {
-    setState(() {
-      _departments = [
-        "Information Technology",
-        "Human Resources",
-        "Finance",
-        "Marketing",
-        "Operations",
-        "Design",
-      ];
-    });
+    if (mounted) {
+      setState(() {
+        _departments = [
+          "Information Technology",
+          "Human Resources",
+          "Finance",
+          "Marketing",
+          "Operations",
+          "Design",
+        ];
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Admin Dashboard', 
+        title: Text(
+          'Welcome, ${_user?['name'] ?? 'Admin'}',
           style: TextStyle(
-            fontSize: 22, 
+            fontSize: 22,
             fontWeight: FontWeight.w600,
-            color: Colors.white
-          )
+            color: Colors.white,
+          ),
         ),
         flexibleSpace: Container(
           decoration: BoxDecoration(
@@ -182,16 +226,16 @@ class _AdminDashboardState extends State<AdminDashboard> with TickerProviderStat
         actions: [
           if (!_isLoading)
             IconButton(
-              icon: _isRefreshing 
-                ? SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: Colors.white,
-                    ),
-                  )
-                : Icon(Icons.refresh, color: Colors.white),
+              icon: _isRefreshing
+                  ? SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : Icon(Icons.refresh, color: Colors.white),
               onPressed: _isRefreshing ? null : _handleRefresh,
             ),
           Container(
@@ -228,10 +272,10 @@ class _AdminDashboardState extends State<AdminDashboard> with TickerProviderStat
           ),
         ),
         child: _isLoading
-            ? _buildLoadingState() // Enhanced loading state
+            ? _buildLoadingState()
             : _errorMessage.isNotEmpty
                 ? _buildErrorState()
-                : RefreshIndicator( // Added pull-to-refresh
+                : RefreshIndicator(
                     onRefresh: _handleRefresh,
                     color: AppTheme.primaryBlue,
                     child: FadeTransition(
@@ -259,6 +303,7 @@ class _AdminDashboardState extends State<AdminDashboard> with TickerProviderStat
           onTap: (index) {
             setState(() {
               _selectedIndex = index;
+              _errorMessage = ''; // Clear error on tab change
               if (index == 4) _loadExpenseClaims();
               else _loadData();
             });
@@ -273,31 +318,31 @@ class _AdminDashboardState extends State<AdminDashboard> with TickerProviderStat
           items: [
             BottomNavigationBarItem(
               icon: _buildNavIcon(Icons.dashboard_outlined, Icons.dashboard, 0),
-              label: 'Dashboard'
+              label: 'Dashboard',
             ),
             BottomNavigationBarItem(
               icon: _buildNavIcon(Icons.people_outline, Icons.people, 1),
-              label: 'Employees'
+              label: 'Employees',
             ),
             BottomNavigationBarItem(
               icon: _buildNavIcon(Icons.schedule_outlined, Icons.schedule, 2),
-              label: 'Attendance'
+              label: 'Attendance',
             ),
             BottomNavigationBarItem(
               icon: _buildNavIcon(Icons.request_page_outlined, Icons.request_page, 3),
-              label: 'Leaves'
+              label: 'Leaves',
             ),
             BottomNavigationBarItem(
               icon: _buildNavIcon(Icons.receipt_outlined, Icons.receipt, 4),
-              label: 'Expenses'
+              label: 'Expenses',
             ),
             BottomNavigationBarItem(
               icon: _buildNavIcon(Icons.notifications_outlined, Icons.notifications, 5),
-              label: 'Notices'
+              label: 'Notices',
             ),
             BottomNavigationBarItem(
               icon: _buildNavIcon(Icons.analytics_outlined, Icons.analytics, 6),
-              label: 'Reports'
+              label: 'Reports',
             ),
           ],
         ),
@@ -315,7 +360,6 @@ class _AdminDashboardState extends State<AdminDashboard> with TickerProviderStat
             showMessage: true,
           ),
           SizedBox(height: 40),
-          // Skeleton loaders for dashboard cards
           Row(
             children: [
               Expanded(child: LoadingWidgets.dashboardCardSkeleton()),
@@ -371,16 +415,18 @@ class _AdminDashboardState extends State<AdminDashboard> with TickerProviderStat
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.error_outline, 
-                      color: AppTheme.errorRed, 
-                      size: 48
+                    Icon(
+                      Icons.error_outline,
+                      color: AppTheme.errorRed,
+                      size: 48,
                     ),
                     SizedBox(height: 16),
-                    Text(_errorMessage, 
+                    Text(
+                      _errorMessage,
                       style: TextStyle(
                         color: AppTheme.errorRed,
                         fontSize: 16,
-                        fontWeight: FontWeight.w500
+                        fontWeight: FontWeight.w500,
                       ),
                       textAlign: TextAlign.center,
                     ),
@@ -481,7 +527,7 @@ class _AdminDashboardState extends State<AdminDashboard> with TickerProviderStat
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  'Welcome Back!',
+                                  'Welcome, ${_user?['name'] ?? 'Admin'}!',
                                   style: TextStyle(
                                     fontSize: 28,
                                     fontWeight: FontWeight.bold,
@@ -567,7 +613,7 @@ class _AdminDashboardState extends State<AdminDashboard> with TickerProviderStat
     return cards.asMap().entries.map((entry) {
       int rowIndex = entry.key;
       List<Widget> rowCards = entry.value;
-      
+
       return TweenAnimationBuilder(
         duration: Duration(milliseconds: 500 + (rowIndex * 100)),
         tween: Tween<double>(begin: 0, end: 1),
@@ -655,126 +701,109 @@ class _AdminDashboardState extends State<AdminDashboard> with TickerProviderStat
     );
   }
 
-  Widget _buildStatCard(String title, String value, IconData icon, Color color) {
-    return Container(
-      padding: EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(15),
-        border: Border.all(color: color.withOpacity(0.3)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, color: color, size: 30),
-          SizedBox(height: 10),
-          Text(value, style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: color)),
-          SizedBox(height: 5),
-          Text(title, style: TextStyle(fontSize: 14, color: Colors.grey[600])),
-        ],
-      ),
-    );
-  }
-
   Widget _buildEmployeesTab() {
-    return Column(children: [
-      TweenAnimationBuilder(
-        duration: Duration(milliseconds: 500),
-        tween: Tween<double>(begin: 0, end: 1),
-        builder: (context, double value, child) {
-          return Transform.translate(
-            offset: Offset(0, -20 * (1 - value)),
-            child: Opacity(
-              opacity: value,
-              child: Container(
-                padding: EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.05),
-                      blurRadius: 10,
-                      offset: Offset(0, 2),
-                    ),
-                  ],
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Employees',
-                          style: TextStyle(
-                            fontSize: 24,
-                            fontWeight: FontWeight.bold,
-                            color: AppTheme.darkGray,
-                          ),
-                        ),
-                        Text(
-                          '${_employees.length} total employees',
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: Colors.grey[600],
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ],
-                    ),
-                    Row(children: [
-                      _buildModernButton(
-                        onPressed: () {
-                          Navigator.push(context, MaterialPageRoute(builder: (context) => AssignScheduleScreen())).then((_) => _loadEmployees());
-                        },
-                        icon: Icons.calendar_month,
-                        label: 'Schedule',
-                        color: Color(0xFF9C27B0),
+    return Column(
+      children: [
+        TweenAnimationBuilder(
+          duration: Duration(milliseconds: 500),
+          tween: Tween<double>(begin: 0, end: 1),
+          builder: (context, double value, child) {
+            return Transform.translate(
+              offset: Offset(0, -20 * (1 - value)),
+              child: Opacity(
+                opacity: value,
+                child: Container(
+                  padding: EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.05),
+                        blurRadius: 10,
+                        offset: Offset(0, 2),
                       ),
-                      SizedBox(width: 10),
-                      _buildModernButton(
-                        onPressed: _showAddEmployeeDialog,
-                        icon: Icons.add,
-                        label: 'Add Employee',
-                        color: AppTheme.primaryBlue,
+                    ],
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Employees',
+                            style: TextStyle(
+                              fontSize: 24,
+                              fontWeight: FontWeight.bold,
+                              color: AppTheme.darkGray,
+                            ),
+                          ),
+                          Text(
+                            '${_employees.length} total employees',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.grey[600],
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
                       ),
-                    ]),
-                  ],
+                      Row(
+                        children: [
+                          _buildModernButton(
+                            onPressed: () {
+                              Navigator.push(context, MaterialPageRoute(builder: (context) => AssignScheduleScreen())).then((_) => _loadEmployees());
+                            },
+                            icon: Icons.calendar_month,
+                            label: 'Schedule',
+                            color: Color(0xFF9C27B0),
+                          ),
+                          SizedBox(width: 10),
+                          _buildModernButton(
+                            onPressed: _showAddEmployeeDialog,
+                            icon: Icons.add,
+                            label: 'Add Employee',
+                            color: AppTheme.primaryBlue,
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
-          );
-        },
-      ),
-      Expanded(
-        child: RefreshIndicator(
-          onRefresh: () => _loadEmployees(),
-          color: AppTheme.primaryBlue,
-          child: _employees.isEmpty
-              ? _buildEmptyEmployeeState()
-              : ListView.builder(
-                  physics: AlwaysScrollableScrollPhysics(),
-                  padding: EdgeInsets.all(20),
-                  itemCount: _employees.length,
-                  itemBuilder: (context, index) {
-                    return TweenAnimationBuilder(
-                      duration: Duration(milliseconds: 300 + (index * 50)),
-                      tween: Tween<double>(begin: 0, end: 1),
-                      builder: (context, double value, child) {
-                        return Transform.translate(
-                          offset: Offset(50 * (1 - value), 0),
-                          child: Opacity(
-                            opacity: value,
-                            child: _buildEmployeeCard(_employees[index], index),
-                          ),
-                        );
-                      },
-                    );
-                  },
-                ),
+            );
+          },
         ),
-      ),
-    ]);
+        Expanded(
+          child: RefreshIndicator(
+            onRefresh: () => _loadEmployees(),
+            color: AppTheme.primaryBlue,
+            child: _employees.isEmpty
+                ? _buildEmptyEmployeeState()
+                : ListView.builder(
+                    physics: AlwaysScrollableScrollPhysics(),
+                    padding: EdgeInsets.all(20),
+                    itemCount: _employees.length,
+                    itemBuilder: (context, index) {
+                      return TweenAnimationBuilder(
+                        duration: Duration(milliseconds: 300 + (index * 50)),
+                        tween: Tween<double>(begin: 0, end: 1),
+                        builder: (context, double value, child) {
+                          return Transform.translate(
+                            offset: Offset(50 * (1 - value), 0),
+                            child: Opacity(
+                              opacity: value,
+                              child: _buildEmployeeCard(_employees[index], index),
+                            ),
+                          );
+                        },
+                      );
+                    },
+                  ),
+          ),
+        ),
+      ],
+    );
   }
 
   Widget _buildEmptyEmployeeState() {
@@ -858,7 +887,7 @@ class _AdminDashboardState extends State<AdminDashboard> with TickerProviderStat
           ),
           child: Center(
             child: Text(
-              employee['name'][0].toUpperCase(),
+              employee['name']?[0]?.toUpperCase() ?? '?',
               style: TextStyle(
                 color: Colors.white,
                 fontSize: 18,
@@ -868,7 +897,7 @@ class _AdminDashboardState extends State<AdminDashboard> with TickerProviderStat
           ),
         ),
         title: Text(
-          employee['name'],
+          employee['name'] ?? 'Unknown',
           style: TextStyle(
             fontWeight: FontWeight.w600,
             fontSize: 16,
@@ -890,7 +919,7 @@ class _AdminDashboardState extends State<AdminDashboard> with TickerProviderStat
                 Icon(Icons.badge, size: 14, color: Colors.grey[600]),
                 SizedBox(width: 4),
                 Text(
-                  '${employee['employeeId']}',
+                  '${employee['employeeId'] ?? 'N/A'}',
                   style: TextStyle(color: Colors.grey[600], fontSize: 13),
                 ),
               ],
@@ -902,7 +931,7 @@ class _AdminDashboardState extends State<AdminDashboard> with TickerProviderStat
                   Icon(Icons.schedule, size: 14, color: AppTheme.primaryBlue),
                   SizedBox(width: 4),
                   Text(
-                    'Shift: ${employee['shift']['name']} (${employee['shift']['startTime']} - ${employee['shift']['endTime']})',
+                    'Shift: ${employee['shift']['name'] ?? 'N/A'} (${employee['shift']['startTime'] ?? '--'} - ${employee['shift']['endTime'] ?? '--'})',
                     style: TextStyle(
                       fontSize: 12,
                       color: AppTheme.primaryBlue,
@@ -979,153 +1008,176 @@ class _AdminDashboardState extends State<AdminDashboard> with TickerProviderStat
   }
 
   Widget _buildAttendanceTab() {
-    return Column(children: [
-      Padding(
-        padding: EdgeInsets.all(20),
-        child: Text('Attendance Records', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: AppTheme.darkGray)),
-      ),
-      Expanded(
-        child: ListView.builder(
-          padding: EdgeInsets.symmetric(horizontal: 20),
-          itemCount: _attendanceRecords.length,
-          itemBuilder: (context, index) {
-            final record = _attendanceRecords[index];
-            final clockInLocation = record['clockIn']?['location']?['name'] ?? 'N/A';
-            final clockOutLocation = record['clockOut']?['location']?['name'] ?? 'N/A';
-            return Card(
-              margin: EdgeInsets.only(bottom: 10),
-              child: ListTile(
-                leading: CircleAvatar(
-                  backgroundColor: _getStatusColor(record['status']),
-                  child: Icon(_getStatusIcon(record['status']), color: Colors.white),
-                ),
-                title: Text('${record['employeeName'] ?? 'Unknown'} (${record['employeeId'] ?? 'N/A'})'),
-                subtitle: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Date: ${record['date']}'),
-                    Text('Clock In: ${record['clockIn']?['time'] ?? '--'} at $clockInLocation'),
-                    Text('Clock Out: ${record['clockOut']?['time'] ?? '--'} at $clockOutLocation'),
-                  ],
-                ),
-                trailing: Chip(
-                  label: Text(record['status'].toUpperCase()),
-                  backgroundColor: _getStatusColor(record['status']).withOpacity(0.2),
-                  labelStyle: TextStyle(color: _getStatusColor(record['status']), fontWeight: FontWeight.bold),
-                ),
-              ),
-            );
-          },
+    return Column(
+      children: [
+        Padding(
+          padding: EdgeInsets.all(20),
+          child: Text(
+            'Attendance Records',
+            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: AppTheme.darkGray),
+          ),
         ),
-      ),
-    ]);
+        Expanded(
+          child: _attendanceRecords.isEmpty
+              ? Center(child: Text('No attendance records found.'))
+              : ListView.builder(
+                  padding: EdgeInsets.symmetric(horizontal: 20),
+                  itemCount: _attendanceRecords.length,
+                  itemBuilder: (context, index) {
+                    final record = _attendanceRecords[index];
+                    final clockInLocation = record['clockIn']?['location']?['name'] ?? 'N/A';
+                    final clockOutLocation = record['clockOut']?['location']?['name'] ?? 'N/A';
+                    return Card(
+                      margin: EdgeInsets.only(bottom: 10),
+                      child: ListTile(
+                        leading: CircleAvatar(
+                          backgroundColor: _getStatusColor(record['status']),
+                          child: Icon(_getStatusIcon(record['status']), color: Colors.white),
+                        ),
+                        title: Text('${record['employeeName'] ?? 'Unknown'} (${record['employeeId'] ?? 'N/A'})'),
+                        subtitle: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Date: ${record['date'] ?? 'N/A'}'),
+                            Text('Clock In: ${record['clockIn']?['time'] ?? '--'} at $clockInLocation'),
+                            Text('Clock Out: ${record['clockOut']?['time'] ?? '--'} at $clockOutLocation'),
+                          ],
+                        ),
+                        trailing: Chip(
+                          label: Text(record['status']?.toUpperCase() ?? 'UNKNOWN'),
+                          backgroundColor: _getStatusColor(record['status']).withOpacity(0.2),
+                          labelStyle: TextStyle(color: _getStatusColor(record['status']), fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+        ),
+      ],
+    );
   }
 
   Widget _buildLeavesTab() {
-    return Column(children: [
-      Padding(
-        padding: EdgeInsets.all(20),
-        child: Text('Leave Requests', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: AppTheme.darkGray)),
-      ),
-      Expanded(
-        child: _leaveRequests.isEmpty
-            ? Center(child: Text('No leave requests found.'))
-            : ListView.builder(
-                padding: EdgeInsets.symmetric(horizontal: 20),
-                itemCount: _leaveRequests.length,
-                itemBuilder: (context, index) {
-                  final request = _leaveRequests[index];
-                  final startDate = DateFormat('yyyy-MM-dd').format(DateTime.parse(request['startDate']));
-                  final endDate = DateFormat('yyyy-MM-dd').format(DateTime.parse(request['endDate']));
-                  return Card(
-                    margin: EdgeInsets.only(bottom: 10),
-                    child: ListTile(
-                      leading: CircleAvatar(
-                        backgroundColor: _getLeaveStatusColor(request['status']),
-                        child: Icon(_getLeaveStatusIcon(request['status']), color: Colors.white),
-                      ),
-                      title: Text('${request['employeeName'] ?? 'Unknown'} - ${request['leaveType']}'),
-                      subtitle: Text('From: $startDate to $endDate (${request['totalDays']} days)\nReason: ${request['reason']}'),
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Chip(
-                            label: Text(request['status'].toUpperCase()),
-                            backgroundColor: _getLeaveStatusColor(request['status']).withOpacity(0.2),
-                            labelStyle: TextStyle(color: _getLeaveStatusColor(request['status']), fontWeight: FontWeight.bold),
-                          ),
-                          if (request['status'] == 'pending')
-                            PopupMenuButton(
-                              itemBuilder: (context) => [
-                                PopupMenuItem(child: Text('Approve'), value: 'approved'),
-                                PopupMenuItem(child: Text('Reject'), value: 'rejected'),
-                              ],
-                              onSelected: (value) {
-                                _updateLeaveRequestStatus(request['_id'], value as String);
-                              },
+    return Column(
+      children: [
+        Padding(
+          padding: EdgeInsets.all(20),
+          child: Text(
+            'Leave Requests',
+            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: AppTheme.darkGray),
+          ),
+        ),
+        Expanded(
+          child: _leaveRequests.isEmpty
+              ? Center(child: Text('No leave requests found.'))
+              : ListView.builder(
+                  padding: EdgeInsets.symmetric(horizontal: 20),
+                  itemCount: _leaveRequests.length,
+                  itemBuilder: (context, index) {
+                    final request = _leaveRequests[index];
+                    final startDate = request['startDate'] != null
+                        ? DateFormat('yyyy-MM-dd').format(DateTime.parse(request['startDate']))
+                        : 'N/A';
+                    final endDate = request['endDate'] != null
+                        ? DateFormat('yyyy-MM-dd').format(DateTime.parse(request['endDate']))
+                        : 'N/A';
+                    return Card(
+                      margin: EdgeInsets.only(bottom: 10),
+                      child: ListTile(
+                        leading: CircleAvatar(
+                          backgroundColor: _getLeaveStatusColor(request['status']),
+                          child: Icon(_getLeaveStatusIcon(request['status']), color: Colors.white),
+                        ),
+                        title: Text('${request['employeeName'] ?? 'Unknown'} - ${request['leaveType']?.toUpperCase() ?? 'N/A'}'),
+                        subtitle: Text('From: $startDate to $endDate (${request['totalDays'] ?? 0} days)\nReason: ${request['reason'] ?? 'N/A'}'),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Chip(
+                              label: Text(request['status']?.toUpperCase() ?? 'UNKNOWN'),
+                              backgroundColor: _getLeaveStatusColor(request['status']).withOpacity(0.2),
+                              labelStyle: TextStyle(color: _getLeaveStatusColor(request['status']), fontWeight: FontWeight.bold),
                             ),
-                        ],
+                            if (request['status'] == 'pending')
+                              PopupMenuButton(
+                                itemBuilder: (context) => [
+                                  PopupMenuItem(child: Text('Approve'), value: 'approved'),
+                                  PopupMenuItem(child: Text('Reject'), value: 'rejected'),
+                                ],
+                                onSelected: (value) {
+                                  _updateLeaveRequestStatus(request['_id'], value as String);
+                                },
+                              ),
+                          ],
+                        ),
                       ),
-                    ),
-                  );
-                },
-              ),
-      ),
-    ]);
+                    );
+                  },
+                ),
+        ),
+      ],
+    );
   }
 
   Widget _buildExpensesTab() {
-    return Column(children: [
-      Padding(
-        padding: EdgeInsets.all(20),
-        child: Text('Expense Claims', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: AppTheme.darkGray)),
-      ),
-      Expanded(
-        child: _expenseClaims.isEmpty
-            ? Center(child: Text('No expense claims found.'))
-            : ListView.builder(
-                padding: EdgeInsets.symmetric(horizontal: 20),
-                itemCount: _expenseClaims.length,
-                itemBuilder: (context, index) {
-                  final claim = _expenseClaims[index];
-                  final claimDate = DateFormat('yyyy-MM-dd').format(DateTime.parse(claim['claimDate'] ?? DateTime.now().toIso8601String()));
-                  return Card(
-                    margin: EdgeInsets.only(bottom: 10),
-                    child: ListTile(
-                      leading: CircleAvatar(
-                        backgroundColor: _getExpenseStatusColor(claim['status'] ?? 'unknown'),
-                        child: Icon(_getExpenseStatusIcon(claim['status'] ?? 'unknown'), color: Colors.white),
-                      ),
-                      title: Text('${claim['employeeName'] ?? 'Unknown'} - ${claim['expenseType']?.replaceAll('-', ' ').toUpperCase() ?? 'N/A'}'),
-                      subtitle: Text(
-                        'Amount: \$${claim['amount']?.toStringAsFixed(2) ?? '0.00'}\nDate: $claimDate\nDescription: ${claim['description'] ?? 'N/A'}',
-                      ),
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Chip(
-                            label: Text((claim['status'] ?? 'N/A').toUpperCase()),
-                            backgroundColor: _getExpenseStatusColor(claim['status'] ?? 'unknown').withOpacity(0.2),
-                            labelStyle: TextStyle(color: _getExpenseStatusColor(claim['status'] ?? 'unknown'), fontWeight: FontWeight.bold),
-                          ),
-                          if ((claim['status'] ?? 'N/A') == 'pending')
-                            PopupMenuButton(
-                              itemBuilder: (context) => [
-                                PopupMenuItem(child: Text('Approve'), value: 'approved'),
-                                PopupMenuItem(child: Text('Reject'), value: 'rejected'),
-                              ],
-                              onSelected: (value) {
-                                _updateExpenseClaimStatus(claim['_id'], value as String);
-                              },
+    return Column(
+      children: [
+        Padding(
+          padding: EdgeInsets.all(20),
+          child: Text(
+            'Expense Claims',
+            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: AppTheme.darkGray),
+          ),
+        ),
+        Expanded(
+          child: _expenseClaims.isEmpty || _expenseClaims[0]['_id'] == 'temp' || _expenseClaims[0]['_id'] == 'error'
+              ? Center(child: Text(_expenseClaims[0]['description'] ?? 'No expense claims found.'))
+              : ListView.builder(
+                  padding: EdgeInsets.symmetric(horizontal: 20),
+                  itemCount: _expenseClaims.length,
+                  itemBuilder: (context, index) {
+                    final claim = _expenseClaims[index];
+                    final claimDate = claim['claimDate'] != null
+                        ? DateFormat('yyyy-MM-dd').format(DateTime.parse(claim['claimDate']))
+                        : 'N/A';
+                    return Card(
+                      margin: EdgeInsets.only(bottom: 10),
+                      child: ListTile(
+                        leading: CircleAvatar(
+                          backgroundColor: _getExpenseStatusColor(claim['status'] ?? 'unknown'),
+                          child: Icon(_getExpenseStatusIcon(claim['status'] ?? 'unknown'), color: Colors.white),
+                        ),
+                        title: Text('${claim['employeeName'] ?? 'Unknown'} - ${claim['expenseType']?.replaceAll('-', ' ').toUpperCase() ?? 'N/A'}'),
+                        subtitle: Text(
+                          'Amount: \$${claim['amount']?.toStringAsFixed(2) ?? '0.00'}\nDate: $claimDate\nDescription: ${claim['description'] ?? 'N/A'}',
+                        ),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Chip(
+                              label: Text((claim['status'] ?? 'N/A').toUpperCase()),
+                              backgroundColor: _getExpenseStatusColor(claim['status'] ?? 'unknown').withOpacity(0.2),
+                              labelStyle: TextStyle(color: _getExpenseStatusColor(claim['status'] ?? 'unknown'), fontWeight: FontWeight.bold),
                             ),
-                        ],
+                            if ((claim['status'] ?? 'N/A') == 'pending')
+                              PopupMenuButton(
+                                itemBuilder: (context) => [
+                                  PopupMenuItem(child: Text('Approve'), value: 'approved'),
+                                  PopupMenuItem(child: Text('Reject'), value: 'rejected'),
+                                ],
+                                onSelected: (value) {
+                                  _updateExpenseClaimStatus(claim['_id'], value as String);
+                                },
+                              ),
+                          ],
+                        ),
                       ),
-                    ),
-                  );
-                },
-              ),
-      ),
-    ]);
+                    );
+                  },
+                ),
+        ),
+      ],
+    );
   }
 
   Widget _buildReportsTab() {
@@ -1134,7 +1186,10 @@ class _AdminDashboardState extends State<AdminDashboard> with TickerProviderStat
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Reports', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: AppTheme.darkGray)),
+          Text(
+            'Reports',
+            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: AppTheme.darkGray),
+          ),
           SizedBox(height: 20),
           Card(
             child: ListTile(
@@ -1159,137 +1214,139 @@ class _AdminDashboardState extends State<AdminDashboard> with TickerProviderStat
   }
 
   Widget _buildNoticesTab() {
-  return Column(children: [
-    Container(
-      padding: EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Notices & Announcements',
-                style: TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                  color: AppTheme.darkGray,
-                ),
-              ),
-              Text(
-                'Manage company notices',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Colors.grey[600],
-                  fontWeight: FontWeight.w500,
-                ),
+    return Column(
+      children: [
+        Container(
+          padding: EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 10,
+                offset: Offset(0, 2),
               ),
             ],
           ),
-          _buildModernButton(
-            onPressed: () {
-              Navigator.pushNamed(context, '/admin-notice');
-            },
-            icon: Icons.notifications,
-            label: 'Manage Notices',
-            color: AppTheme.primaryBlue,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Notices & Announcements',
+                    style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                      color: AppTheme.darkGray,
+                    ),
+                  ),
+                  Text(
+                    'Manage company notices',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.grey[600],
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+              _buildModernButton(
+                onPressed: () {
+                  Navigator.pushNamed(context, '/admin-notice');
+                },
+                icon: Icons.notifications,
+                label: 'Manage Notices',
+                color: AppTheme.primaryBlue,
+              ),
+            ],
           ),
-        ],
-      ),
-    ),
-    Expanded(
-      child: Container(
-        padding: EdgeInsets.all(20),
-        child: Column(
-          children: [
-            Card(
-              child: ListTile(
-                leading: Container(
-                  padding: EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [AppTheme.primaryBlue, Color(0xFF1E88E5)],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Icon(Icons.add_alert, color: Colors.white, size: 24),
-                ),
-                title: Text('Create New Notice'),
-                subtitle: Text('Send announcements to all employees'),
-                trailing: Icon(Icons.arrow_forward_ios),
-                onTap: () {
-                  Navigator.pushNamed(context, '/admin-notice');
-                },
-              ),
-            ),
-            SizedBox(height: 16),
-            Card(
-              child: ListTile(
-                leading: Container(
-                  padding: EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [AppTheme.successGreen, Color(0xFF43A047)],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Icon(Icons.visibility, color: Colors.white, size: 24),
-                ),
-                title: Text('View All Notices'),
-                subtitle: Text('Manage existing notices and announcements'),
-                trailing: Icon(Icons.arrow_forward_ios),
-                onTap: () {
-                  Navigator.pushNamed(context, '/admin-notice');
-                },
-              ),
-            ),
-            SizedBox(height: 16),
-            Card(
-              child: ListTile(
-                leading: Container(
-                  padding: EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [Color(0xFF9C27B0), Color(0xFFAB47BC)],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Icon(Icons.analytics, color: Colors.white, size: 24),
-                ),
-                title: Text('Notice Analytics'),
-                subtitle: Text('View notice engagement statistics'),
-                trailing: Icon(Icons.arrow_forward_ios),
-                onTap: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Notice analytics coming soon!')),
-                  );
-                },
-              ),
-            ),
-          ],
         ),
-      ),
-    ),
-  ]);
-}
+        Expanded(
+          child: Container(
+            padding: EdgeInsets.all(20),
+            child: Column(
+              children: [
+                Card(
+                  child: ListTile(
+                    leading: Container(
+                      padding: EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [AppTheme.primaryBlue, Color(0xFF1E88E5)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(Icons.add_alert, color: Colors.white, size: 24),
+                    ),
+                    title: Text('Create New Notice'),
+                    subtitle: Text('Send announcements to all employees'),
+                    trailing: Icon(Icons.arrow_forward_ios),
+                    onTap: () {
+                      Navigator.pushNamed(context, '/admin-notice');
+                    },
+                  ),
+                ),
+                SizedBox(height: 16),
+                Card(
+                  child: ListTile(
+                    leading: Container(
+                      padding: EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [AppTheme.successGreen, Color(0xFF43A047)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(Icons.visibility, color: Colors.white, size: 24),
+                    ),
+                    title: Text('View All Notices'),
+                    subtitle: Text('Manage existing notices and announcements'),
+                    trailing: Icon(Icons.arrow_forward_ios),
+                    onTap: () {
+                      Navigator.pushNamed(context, '/admin-notice');
+                    },
+                  ),
+                ),
+                SizedBox(height: 16),
+                Card(
+                  child: ListTile(
+                    leading: Container(
+                      padding: EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [Color(0xFF9C27B0), Color(0xFFAB47BC)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(Icons.analytics, color: Colors.white, size: 24),
+                    ),
+                    title: Text('Notice Analytics'),
+                    subtitle: Text('View notice engagement statistics'),
+                    trailing: Icon(Icons.arrow_forward_ios),
+                    onTap: () {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Notice analytics coming soon!')),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
 
-  Color _getStatusColor(String status) {
+  Color _getStatusColor(String? status) {
     switch (status) {
       case 'present':
         return AppTheme.successGreen;
@@ -1302,7 +1359,7 @@ class _AdminDashboardState extends State<AdminDashboard> with TickerProviderStat
     }
   }
 
-  IconData _getStatusIcon(String status) {
+  IconData _getStatusIcon(String? status) {
     switch (status) {
       case 'present':
         return Icons.check_circle;
@@ -1315,7 +1372,7 @@ class _AdminDashboardState extends State<AdminDashboard> with TickerProviderStat
     }
   }
 
-  Color _getLeaveStatusColor(String status) {
+  Color _getLeaveStatusColor(String? status) {
     switch (status) {
       case 'pending':
         return AppTheme.warningOrange;
@@ -1328,7 +1385,7 @@ class _AdminDashboardState extends State<AdminDashboard> with TickerProviderStat
     }
   }
 
-  IconData _getLeaveStatusIcon(String status) {
+  IconData _getLeaveStatusIcon(String? status) {
     switch (status) {
       case 'pending':
         return Icons.pending_actions;
@@ -1341,7 +1398,7 @@ class _AdminDashboardState extends State<AdminDashboard> with TickerProviderStat
     }
   }
 
-  Color _getExpenseStatusColor(String status) {
+  Color _getExpenseStatusColor(String? status) {
     switch (status) {
       case 'pending':
         return AppTheme.warningOrange;
@@ -1354,7 +1411,7 @@ class _AdminDashboardState extends State<AdminDashboard> with TickerProviderStat
     }
   }
 
-  IconData _getExpenseStatusIcon(String status) {
+  IconData _getExpenseStatusIcon(String? status) {
     switch (status) {
       case 'pending':
         return Icons.receipt_long;
@@ -1382,7 +1439,10 @@ class _AdminDashboardState extends State<AdminDashboard> with TickerProviderStat
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              TextField(controller: nameController, decoration: InputDecoration(labelText: 'Full Name')),
+              TextField(
+                controller: nameController,
+                decoration: InputDecoration(labelText: 'Full Name'),
+              ),
               SizedBox(height: 10),
               TextField(
                 controller: emailController,
@@ -1436,12 +1496,12 @@ class _AdminDashboardState extends State<AdminDashboard> with TickerProviderStat
                 });
 
                 Navigator.pop(context);
-                _loadEmployees();
+                await _loadEmployees();
                 if (response['success']) {
                   final employeeId = response['employee']['employeeId'];
                   final generatedPassword = response['employee']['generatedPassword'];
                   final emailStatus = response['emailStatus'] ?? {'sent': false, 'message': 'Email status unknown'};
-                  
+
                   showDialog(
                     context: context,
                     builder: (context) => AlertDialog(
@@ -1477,9 +1537,9 @@ class _AdminDashboardState extends State<AdminDashboard> with TickerProviderStat
                                 SizedBox(width: 8),
                                 Expanded(
                                   child: Text(
-                                    emailStatus['sent'] 
-                                      ? 'Welcome email sent to ${emailController.text}'
-                                      : 'Email not sent: ${emailStatus['message']}',
+                                    emailStatus['sent']
+                                        ? 'Welcome email sent to ${emailController.text}'
+                                        : 'Email not sent: ${emailStatus['message']}',
                                     style: TextStyle(
                                       fontSize: 12,
                                       color: emailStatus['sent'] ? Colors.green.shade700 : Colors.orange.shade700,
@@ -1534,7 +1594,10 @@ class _AdminDashboardState extends State<AdminDashboard> with TickerProviderStat
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              TextField(controller: nameController, decoration: InputDecoration(labelText: 'Full Name')),
+              TextField(
+                controller: nameController,
+                decoration: InputDecoration(labelText: 'Full Name'),
+              ),
               SizedBox(height: 10),
               TextField(
                 controller: emailController,
@@ -1557,7 +1620,10 @@ class _AdminDashboardState extends State<AdminDashboard> with TickerProviderStat
                 },
               ),
               SizedBox(height: 10),
-              TextField(controller: designationController, decoration: InputDecoration(labelText: 'Designation')),
+              TextField(
+                controller: designationController,
+                decoration: InputDecoration(labelText: 'Designation'),
+              ),
               SizedBox(height: 10),
               TextField(
                 controller: phoneNumberController,
@@ -1584,7 +1650,7 @@ class _AdminDashboardState extends State<AdminDashboard> with TickerProviderStat
                   'phoneNumber': phoneNumberController.text,
                 });
                 Navigator.pop(context);
-                _loadEmployees();
+                await _loadEmployees();
                 if (response['success']) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(content: Text('Employee updated successfully')),
@@ -1611,7 +1677,7 @@ class _AdminDashboardState extends State<AdminDashboard> with TickerProviderStat
     try {
       final response = await AdminService.deleteEmployee(employeeId);
       if (response['success']) {
-        _loadEmployees();
+        await _loadEmployees();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Employee deleted successfully')),
         );
@@ -1631,9 +1697,9 @@ class _AdminDashboardState extends State<AdminDashboard> with TickerProviderStat
     try {
       final response = await LeaveService.updateLeaveRequestStatus(requestId, status);
       if (response['success']) {
-        _loadLeaveRequests();
+        await _loadLeaveRequests();
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Leave request status updated to ${status} successfully')),
+          SnackBar(content: Text('Leave request status updated to $status successfully')),
         );
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1651,9 +1717,9 @@ class _AdminDashboardState extends State<AdminDashboard> with TickerProviderStat
     try {
       final response = await ExpenseService.updateExpenseClaimStatus(claimId, status);
       if (response['success']) {
-        _loadExpenseClaims();
+        await _loadExpenseClaims();
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Expense claim status updated to ${status} successfully')),
+          SnackBar(content: Text('Expense claim status updated to $status successfully')),
         );
       } else {
         ScaffoldMessenger.of(context).showSnackBar(

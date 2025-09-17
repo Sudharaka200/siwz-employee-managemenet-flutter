@@ -8,6 +8,7 @@ import '../services/auth_service.dart';
 import '../widgets/attendance_card.dart';
 import '../widgets/quick_action_button.dart';
 import '../widgets/notice_notification_widget.dart';
+import 'package:intl/intl.dart';
 
 class DashboardScreen extends StatefulWidget {
   @override
@@ -25,27 +26,15 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
   Position? _currentPosition;
   String _locationStatus = 'Getting location...';
   bool _isLocationLoading = true;
+  bool _isAttendanceLoading = false;
   Set<Marker> _markers = {};
-
-  Future<void> _loadCurrentUser() async {
-    setState(() {
-      _currentUser = AuthService.getUser();
-    });
-  }
-
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
-      _loadTodayAttendance(); // Reload attendance data
-      _loadCurrentUser(); // Reload user data when app resumes
-    }
-  }
+  String _errorMessage = '';
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _loadCurrentUser(); // Load current user on init
+    _loadCurrentUser();
     _updateTime();
     _loadTodayAttendance();
     _initializeLocation();
@@ -53,33 +42,102 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
 
   @override
   void dispose() {
-    WidgetsBinding.instance.removeObserver(this); // Remove observer
+    WidgetsBinding.instance.removeObserver(this);
     _mapController?.dispose();
     super.dispose();
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _loadTodayAttendance();
+      _loadCurrentUser();
+      _updateLocation();
+    }
+  }
+
+  Future<void> _loadCurrentUser() async {
+    if (!mounted) return;
+    setState(() {
+      _currentUser = AuthService.getUser();
+    });
+  }
+
+  void _updateTime() {
+    if (!mounted) return;
+    setState(() {
+      _currentTime = DateFormat('HH:mm').format(DateTime.now());
+    });
+    Future.delayed(Duration(seconds: 1), _updateTime);
+  }
+
   Future<void> _initializeLocation() async {
+    if (!mounted) return;
     await _requestLocationPermission();
     await _getCurrentLocation();
     _startLocationTracking();
   }
 
   Future<void> _requestLocationPermission() async {
+    if (!mounted) return;
     LocationPermission permission = await Geolocator.checkPermission();
     if (permission == LocationPermission.denied) {
       permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied) {
+        setState(() {
+          _locationStatus = 'Location permission denied';
+          _isLocationLoading = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Location permission denied. Please enable it in settings.'),
+            action: SnackBarAction(
+              label: 'Open Settings',
+              onPressed: () => openAppSettings(),
+            ),
+          ),
+        );
+        return;
+      }
     }
     
     if (permission == LocationPermission.deniedForever) {
       setState(() {
-        _locationStatus = 'Location access denied';
+        _locationStatus = 'Location access permanently denied';
         _isLocationLoading = false;
       });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Location access permanently denied. Please enable it in settings.'),
+          action: SnackBarAction(
+            label: 'Open Settings',
+            onPressed: () => openAppSettings(),
+          ),
+        ),
+      );
       return;
+    }
+
+    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      setState(() {
+        _locationStatus = 'Location services disabled';
+        _isLocationLoading = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Please enable location services.'),
+          action: SnackBarAction(
+            label: 'Enable',
+            onPressed: () => Geolocator.openLocationSettings(),
+          ),
+        ),
+      );
     }
   }
 
   Future<void> _getCurrentLocation() async {
+    if (!mounted) return;
     try {
       Position position = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.high,
@@ -98,28 +156,47 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
         };
       });
       
-      if (_mapController != null) {
-        _mapController!.animateCamera(
-          CameraUpdate.newLatLng(
-            LatLng(position.latitude, position.longitude),
-          ),
-        );
-      }
+      _mapController?.animateCamera(
+        CameraUpdate.newLatLngZoom(
+          LatLng(position.latitude, position.longitude),
+          15.0,
+        ),
+      );
     } catch (e) {
+      if (!mounted) return;
       setState(() {
-        _locationStatus = 'Location error';
+        _locationStatus = 'Failed to get location';
         _isLocationLoading = false;
+        _errorMessage = 'Location error: ${e.toString()}';
       });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(_errorMessage)),
+      );
     }
   }
 
+  Future<void> _updateLocation() async {
+    if (!mounted) return;
+    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      setState(() {
+        _locationStatus = 'Location services disabled';
+        _isLocationLoading = false;
+      });
+      return;
+    }
+    await _getCurrentLocation();
+  }
+
   void _startLocationTracking() {
+    if (!mounted) return;
     Geolocator.getPositionStream(
       locationSettings: LocationSettings(
         accuracy: LocationAccuracy.high,
         distanceFilter: 10,
       ),
     ).listen((Position position) {
+      if (!mounted) return;
       setState(() {
         _currentPosition = position;
         _locationStatus = 'Live';
@@ -132,39 +209,79 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
         };
       });
       
-      if (_mapController != null) {
-        _mapController!.animateCamera(
-          CameraUpdate.newLatLng(
-            LatLng(position.latitude, position.longitude),
-          ),
-        );
-      }
+      _mapController?.animateCamera(
+        CameraUpdate.newLatLng(
+          LatLng(position.latitude, position.longitude),
+        ),
+      );
+    }, onError: (e) {
+      if (!mounted) return;
+      setState(() {
+        _locationStatus = 'Location tracking error';
+        _errorMessage = 'Tracking error: ${e.toString()}';
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(_errorMessage)),
+      );
     });
-  }
-
-  void _updateTime() {
-    setState(() {
-      _currentTime = DateTime.now().toString().substring(11, 16);
-    });
-    Future.delayed(Duration(seconds: 1), _updateTime);
   }
 
   Future<void> _loadTodayAttendance() async {
+    if (!mounted) return;
+    setState(() => _isAttendanceLoading = true);
     try {
       final attendance = await AttendanceService.getTodayAttendance();
+      if (!mounted) return;
       setState(() {
         _todayAttendance = attendance;
         _isClockedIn = attendance?['clockIn'] != null && attendance?['clockOut'] == null;
+        _errorMessage = '';
       });
     } catch (e) {
-      print('Error loading attendance: $e');
+      if (!mounted) return;
+      setState(() {
+        _errorMessage = 'Failed to load attendance: ${e.toString()}';
+      });
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to load today\'s attendance: ${e.toString()}')),
+        SnackBar(content: Text(_errorMessage)),
       );
+    } finally {
+      if (mounted) {
+        setState(() => _isAttendanceLoading = false);
+      }
+    }
+  }
+
+  Future<void> _loadAttendanceForDate(DateTime date) async {
+    if (!mounted) return;
+    setState(() => _isAttendanceLoading = true);
+    try {
+      final attendance = await AttendanceService.getAttendanceForDate(
+        DateFormat('yyyy-MM-dd').format(date),
+      );
+      if (!mounted) return;
+      setState(() {
+        _todayAttendance = attendance;
+        _isClockedIn = attendance?['clockIn'] != null && attendance?['clockOut'] == null;
+        _errorMessage = '';
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _errorMessage = 'Failed to load attendance for ${DateFormat('yyyy-MM-dd').format(date)}: ${e.toString()}';
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(_errorMessage)),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isAttendanceLoading = false);
+      }
     }
   }
 
   Future<void> _selectDate() async {
+    if (!mounted) return;
     final DateTime? picked = await showDatePicker(
       context: context,
       initialDate: _selectedDate,
@@ -185,30 +302,11 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
       },
     );
     
-    if (picked != null && picked != _selectedDate) {
+    if (picked != null && picked != _selectedDate && mounted) {
       setState(() {
         _selectedDate = picked;
       });
-      // Load attendance data for selected date
       await _loadAttendanceForDate(picked);
-    }
-  }
-
-  Future<void> _loadAttendanceForDate(DateTime date) async {
-    try {
-      // You can modify this to call your service with the specific date
-      // For now, it loads today's attendance, but you can extend AttendanceService
-      // to accept a date parameter: AttendanceService.getAttendanceForDate(date)
-      final attendance = await AttendanceService.getTodayAttendance();
-      setState(() {
-        _todayAttendance = attendance;
-        _isClockedIn = attendance?['clockIn'] != null && attendance?['clockOut'] == null;
-      });
-    } catch (e) {
-      print('Error loading attendance for date: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to load attendance for selected date: ${e.toString()}')),
-      );
     }
   }
 
@@ -222,8 +320,79 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
     } else if (selectedDay == today.subtract(Duration(days: 1))) {
       return 'Yesterday';
     } else {
-      return '${_selectedDate.day}/${_selectedDate.month}/${_selectedDate.year}';
+      return DateFormat('dd/MM/yyyy').format(_selectedDate);
     }
+  }
+
+  Future<void> _handleClockInOut() async {
+    if (!mounted) return;
+    if (_currentPosition == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Cannot clock in/out: Location unavailable')),
+      );
+      return;
+    }
+    
+    setState(() => _isAttendanceLoading = true);
+    try {
+      if (_isClockedIn) {
+        await AttendanceService.clockOut();
+        if (!mounted) return;
+        await _loadTodayAttendance();
+        _showSuccessDialog('Clocked out successfully!');
+      } else {
+        await AttendanceService.clockIn();
+        if (!mounted) return;
+        await _loadTodayAttendance();
+        _showSuccessDialog('Clocked in successfully!');
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _errorMessage = 'Failed to update attendance: ${e.toString()}';
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(_errorMessage)),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isAttendanceLoading = false);
+      }
+    }
+  }
+
+  void _showSuccessDialog(String message) {
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Success'),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('OK', style: TextStyle(color: AppTheme.primaryBlue)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showErrorDialog(String message) {
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Error'),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('OK', style: TextStyle(color: AppTheme.primaryBlue)),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -241,35 +410,245 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
           ),
         ),
         child: SafeArea(
-          child: SingleChildScrollView(
-            padding: EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _buildHeader(),
-                SizedBox(height: 16),
-                _buildDateSelector(),
-                SizedBox(height: 16),
-                NoticeNotificationWidget(
-                  onNoticesTap: () {
-                    Navigator.pushNamed(context, '/employee-notice');
-                  },
-                ),
-                SizedBox(height: 16),
-                _buildAttendanceCard(),
-                SizedBox(height: 20),
-                _buildLocationSection(),
-                SizedBox(height: 20),
-                _buildQuickActions(),
-                SizedBox(height: 20),
-                _buildTodaySummary(),
-                SizedBox(height: 20),
-              ],
+          child: RefreshIndicator(
+            onRefresh: () async {
+              await Future.wait([
+                _loadTodayAttendance(),
+                _loadCurrentUser(),
+                _updateLocation(),
+              ]);
+            },
+            color: AppTheme.primaryBlue,
+            child: SingleChildScrollView(
+              physics: AlwaysScrollableScrollPhysics(),
+              padding: EdgeInsets.all(16),
+              child: _errorMessage.isNotEmpty && !_isAttendanceLoading
+                  ? _buildErrorState()
+                  : Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildHeader(),
+                        SizedBox(height: 16),
+                        _buildDateSelector(),
+                        SizedBox(height: 16),
+                        NoticeNotificationWidget(
+                          onNoticesTap: () {
+                            Navigator.pushNamed(context, '/employee-notice');
+                          },
+                        ),
+                        SizedBox(height: 16),
+                        _buildAttendanceCard(),
+                        SizedBox(height: 20),
+                        _buildLocationSection(),
+                        SizedBox(height: 20),
+                        _buildQuickActions(),
+                        SizedBox(height: 20),
+                        _buildTodaySummary(),
+                        SizedBox(height: 20),
+                      ],
+                    ),
             ),
           ),
         ),
       ),
       bottomNavigationBar: _buildBottomNavigation(),
+    );
+  }
+
+  Widget _buildErrorState() {
+    return Center(
+      child: Container(
+        margin: EdgeInsets.all(20),
+        padding: EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.1),
+              blurRadius: 10,
+              offset: Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.error_outline,
+              color: AppTheme.errorRed,
+              size: 48,
+            ),
+            SizedBox(height: 16),
+            Text(
+              _errorMessage,
+              style: TextStyle(
+                color: AppTheme.errorRed,
+                fontSize: 16,
+                fontWeight: FontWeight.w500,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            SizedBox(height: 20),
+            ElevatedButton(
+              onPressed: () async {
+                await Future.wait([
+                  _loadTodayAttendance(),
+                  _loadCurrentUser(),
+                  _updateLocation(),
+                ]);
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.primaryBlue,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              child: Text('Retry'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHeader() {
+    return Container(
+      padding: EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [Colors.white, Color(0xFFF8FAFF)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 15,
+            offset: Offset(0, 5),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: EdgeInsets.all(3),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [AppTheme.primaryBlue, AppTheme.secondaryBlue],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              shape: BoxShape.circle,
+            ),
+            child: CircleAvatar(
+              radius: 28,
+              backgroundColor: Colors.white,
+              child: CircleAvatar(
+                radius: 25,
+                backgroundColor: AppTheme.primaryBlue,
+                backgroundImage: _currentUser?['profilePicture'] != null &&
+                        _currentUser!['profilePicture'].isNotEmpty
+                    ? NetworkImage(_currentUser!['profilePicture'])
+                    : null,
+                child: _currentUser?['profilePicture'] == null ||
+                        _currentUser!['profilePicture'].isEmpty
+                    ? Text(
+                        _currentUser?['name']?[0]?.toUpperCase() ?? 'E',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      )
+                    : null,
+              ),
+            ),
+          ),
+          SizedBox(width: 15),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Welcome back,',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey[600],
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                Text(
+                  _currentUser?['name'] ?? 'Employee',
+                  style: TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                    color: AppTheme.darkGray,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+                Text(
+                  _currentUser?['designation'] ?? 'Employee',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: AppTheme.primaryBlue,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Container(
+            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [AppTheme.primaryBlue.withOpacity(0.1), AppTheme.lightBlue],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(25),
+              border: Border.all(color: AppTheme.primaryBlue.withOpacity(0.2)),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.access_time, color: AppTheme.primaryBlue, size: 16),
+                SizedBox(width: 6),
+                Text(
+                  _currentTime,
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: AppTheme.primaryBlue,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          SizedBox(width: 10),
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.red.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: IconButton(
+              icon: Icon(Icons.logout, color: Colors.red[600], size: 20),
+              onPressed: () async {
+                final result = await AuthService.logout();
+                if (mounted && result['success']) {
+                  Navigator.pushReplacementNamed(context, '/login');
+                } else if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text(result['message'] ?? 'Logout failed')),
+                  );
+                }
+              },
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -351,132 +730,6 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
     );
   }
 
-  Widget _buildHeader() {
-    return Container(
-      padding: EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [Colors.white, Color(0xFFF8FAFF)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 15,
-            offset: Offset(0, 5),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: EdgeInsets.all(3),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [AppTheme.primaryBlue, AppTheme.secondaryBlue],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              shape: BoxShape.circle,
-            ),
-            child: CircleAvatar(
-              radius: 28,
-              backgroundColor: Colors.white,
-              child: CircleAvatar(
-                radius: 25,
-                backgroundColor: AppTheme.primaryBlue,
-                backgroundImage: _currentUser?['profilePicture'] != null &&
-                        _currentUser!['profilePicture'].isNotEmpty
-                    ? NetworkImage(_currentUser!['profilePicture'])
-                    : null,
-                child: _currentUser?['profilePicture'] == null ||
-                        _currentUser!['profilePicture'].isEmpty
-                    ? Icon(Icons.person, color: Colors.white, size: 30)
-                    : null,
-              ),
-            ),
-          ),
-          SizedBox(width: 15),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Welcome back,',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.grey[600],
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                Text(
-                  _currentUser?['name'] ?? 'Employee Name',
-                  style: TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                    color: AppTheme.darkGray,
-                    letterSpacing: 0.5,
-                  ),
-                ),
-                Text(
-                  _currentUser?['designation'] ?? 'Designation',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: AppTheme.primaryBlue,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Container(
-            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [AppTheme.primaryBlue.withOpacity(0.1), AppTheme.lightBlue],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(25),
-              border: Border.all(color: AppTheme.primaryBlue.withOpacity(0.2)),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.access_time, color: AppTheme.primaryBlue, size: 16),
-                SizedBox(width: 6),
-                Text(
-                  _currentTime,
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: AppTheme.primaryBlue,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          SizedBox(width: 10),
-          Container(
-            decoration: BoxDecoration(
-              color: Colors.red.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: IconButton(
-              icon: Icon(Icons.logout, color: Colors.red[600], size: 20),
-              onPressed: () async {
-                await AuthService.logout();
-                Navigator.pushReplacementNamed(context, '/login');
-              },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildAttendanceCard() {
     return Container(
       padding: EdgeInsets.all(25),
@@ -497,130 +750,139 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
             blurRadius: 20,
             offset: Offset(0, 10),
           ),
-          BoxShadow(
-            color: Colors.white.withOpacity(0.1),
-            blurRadius: 10,
-            offset: Offset(-5, -5),
-          ),
         ],
       ),
-      child: Column(
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    _formatSelectedDate() == 'Today' ? 'Today\'s Status' : '${_formatSelectedDate()} Status',
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                      letterSpacing: 0.5,
-                    ),
-                  ),
-                  Text(
-                    'Track your attendance',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Colors.white.withOpacity(0.8),
-                    ),
-                  ),
-                ],
+      child: _isAttendanceLoading
+          ? Center(
+              child: CircularProgressIndicator(
+                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
               ),
-              Container(
-                padding: EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.2),
-                  borderRadius: BorderRadius.circular(15),
-                ),
-                child: Icon(
-                  _isClockedIn ? Icons.access_time_filled : Icons.schedule,
-                  color: Colors.white,
-                  size: 28,
-                ),
-              ),
-            ],
-          ),
-          SizedBox(height: 25),
-          Row(
-            children: [
-              Expanded(
-                child: _buildTimeCard(
-                  'Clock In',
-                  _todayAttendance?['clockIn']?['time'] ?? '--:--',
-                  Icons.login,
-                ),
-              ),
-              SizedBox(width: 15),
-              Expanded(
-                child: _buildTimeCard(
-                  'Clock Out',
-                  _todayAttendance?['clockOut']?['time'] ?? '--:--',
-                  Icons.logout,
-                ),
-              ),
-            ],
-          ),
-          SizedBox(height: 25),
-          if (_formatSelectedDate() == 'Today')
-            Container(
-              width: double.infinity,
-              height: 55,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [Colors.white, Color(0xFFF8FAFF)],
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                ),
-                borderRadius: BorderRadius.circular(18),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.1),
-                    blurRadius: 10,
-                    offset: Offset(0, 5),
-                  ),
-                ],
-              ),
-              child: ElevatedButton(
-                onPressed: _handleClockInOut,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.transparent,
-                  foregroundColor: AppTheme.primaryBlue,
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(18),
-                  ),
-                  shadowColor: Colors.transparent,
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
+            )
+          : Column(
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Icon(
-                      _isClockedIn ? Icons.logout : Icons.login,
-                      size: 20,
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _formatSelectedDate() == 'Today'
+                              ? 'Today\'s Status'
+                              : '${_formatSelectedDate()} Status',
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                        Text(
+                          'Track your attendance',
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Colors.white.withOpacity(0.8),
+                          ),
+                        ),
+                      ],
                     ),
-                    SizedBox(width: 8),
-                    Text(
-                      _isClockedIn ? 'CLOCK OUT' : 'CLOCK IN',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 1.2,
+                    Container(
+                      padding: EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(15),
+                      ),
+                      child: Icon(
+                        _isClockedIn ? Icons.access_time_filled : Icons.schedule,
+                        color: Colors.white,
+                        size: 28,
                       ),
                     ),
                   ],
                 ),
-              ),
+                SizedBox(height: 25),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _buildTimeCard(
+                        'Clock In',
+                        _todayAttendance?['clockIn']?['time'] ?? '--:--',
+                        Icons.login,
+                        _todayAttendance?['clockIn']?['location']?['name'] ?? 'N/A',
+                      ),
+                    ),
+                    SizedBox(width: 15),
+                    Expanded(
+                      child: _buildTimeCard(
+                        'Clock Out',
+                        _todayAttendance?['clockOut']?['time'] ?? '--:--',
+                        Icons.logout,
+                        _todayAttendance?['clockOut']?['location']?['name'] ?? 'N/A',
+                      ),
+                    ),
+                  ],
+                ),
+                SizedBox(height: 25),
+                if (_formatSelectedDate() == 'Today')
+                  Container(
+                    width: double.infinity,
+                    height: 55,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [Colors.white, Color(0xFFF8FAFF)],
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                      ),
+                      borderRadius: BorderRadius.circular(18),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.1),
+                          blurRadius: 10,
+                          offset: Offset(0, 5),
+                        ),
+                      ],
+                    ),
+                    child: ElevatedButton(
+                      onPressed: _isAttendanceLoading ? null : _handleClockInOut,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.transparent,
+                        foregroundColor: AppTheme.primaryBlue,
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(18),
+                        ),
+                        shadowColor: Colors.transparent,
+                      ),
+                      child: _isAttendanceLoading
+                          ? CircularProgressIndicator(
+                              valueColor: AlwaysStoppedAnimation<Color>(AppTheme.primaryBlue),
+                            )
+                          : Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  _isClockedIn ? Icons.logout : Icons.login,
+                                  size: 20,
+                                ),
+                                SizedBox(width: 8),
+                                Text(
+                                  _isClockedIn ? 'CLOCK OUT' : 'CLOCK IN',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                    letterSpacing: 1.2,
+                                  ),
+                                ),
+                              ],
+                            ),
+                    ),
+                  ),
+              ],
             ),
-        ],
-      ),
     );
   }
 
-  Widget _buildTimeCard(String title, String time, IconData icon) {
+  Widget _buildTimeCard(String title, String time, IconData icon, String location) {
     return Container(
       padding: EdgeInsets.all(18),
       decoration: BoxDecoration(
@@ -662,6 +924,199 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
               fontWeight: FontWeight.bold,
               color: Colors.white,
               letterSpacing: 0.5,
+            ),
+          ),
+          SizedBox(height: 4),
+          Text(
+            location,
+            style: TextStyle(
+              fontSize: 12,
+              color: Colors.white.withOpacity(0.8),
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLocationSection() {
+    return Container(
+      padding: EdgeInsets.all(25),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [Color(0xFF11998e), Color(0xFF38ef7d)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(25),
+        boxShadow: [
+          BoxShadow(
+            color: Color(0xFF11998e).withOpacity(0.4),
+            blurRadius: 20,
+            offset: Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Live Location',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                  Row(
+                    children: [
+                      Container(
+                        width: 8,
+                        height: 8,
+                        decoration: BoxDecoration(
+                          color: _locationStatus == 'Live' ? Colors.greenAccent : Colors.orange,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      SizedBox(width: 8),
+                      Text(
+                        _locationStatus,
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.white.withOpacity(0.9),
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (_currentPosition != null) ...[
+                    SizedBox(height: 4),
+                    Text(
+                      'Lat: ${_currentPosition!.latitude.toStringAsFixed(6)}',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.white.withOpacity(0.8),
+                      ),
+                    ),
+                    Text(
+                      'Lng: ${_currentPosition!.longitude.toStringAsFixed(6)}',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.white.withOpacity(0.8),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+              Container(
+                padding: EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(15),
+                ),
+                child: Icon(
+                  Icons.location_on,
+                  color: Colors.white,
+                  size: 28,
+                ),
+              ),
+            ],
+          ),
+          SizedBox(height: 20),
+          Container(
+            height: 150,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(15),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.2),
+                  blurRadius: 10,
+                  offset: Offset(0, 5),
+                ),
+              ],
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(15),
+              child: _isLocationLoading
+                  ? Container(
+                      color: Colors.white.withOpacity(0.2),
+                      child: Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            CircularProgressIndicator(
+                              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                            ),
+                            SizedBox(height: 10),
+                            Text(
+                              'Getting your location...',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    )
+                  : _currentPosition != null
+                      ? GoogleMap(
+                          initialCameraPosition: CameraPosition(
+                            target: LatLng(
+                              _currentPosition!.latitude,
+                              _currentPosition!.longitude,
+                            ),
+                            zoom: 15.0,
+                          ),
+                          markers: _markers,
+                          myLocationEnabled: true,
+                          myLocationButtonEnabled: false,
+                          zoomControlsEnabled: false,
+                          onMapCreated: (GoogleMapController controller) {
+                            _mapController = controller;
+                          },
+                        )
+                      : Container(
+                          color: Colors.white.withOpacity(0.2),
+                          child: Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.location_off,
+                                  color: Colors.white,
+                                  size: 40,
+                                ),
+                                SizedBox(height: 10),
+                                Text(
+                                  _locationStatus,
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 14,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                                SizedBox(height: 10),
+                                ElevatedButton(
+                                  onPressed: _updateLocation,
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.white,
+                                    foregroundColor: Color(0xFF11998e),
+                                  ),
+                                  child: Text('Retry'),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
             ),
           ),
         ],
@@ -867,11 +1322,6 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
             blurRadius: 20,
             offset: Offset(0, 10),
           ),
-          BoxShadow(
-            color: Colors.white,
-            blurRadius: 10,
-            offset: Offset(-5, -5),
-          ),
         ],
       ),
       child: Column(
@@ -904,82 +1354,99 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
             ],
           ),
           SizedBox(height: 20),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              _buildEnhancedSummaryItem(
-                'Working Hours', 
-                '${_todayAttendance?['workingHours']?.toStringAsFixed(2) ?? '0.00'}h',
-                Icons.work,
-                [Color(0xFF667eea), Color(0xFF764ba2)],
-              ),
-              _buildEnhancedSummaryItem(
-                'Break Time', 
-                '${_todayAttendance?['breakTime'] ?? '0'}m',
-                Icons.coffee,
-                [Color(0xFFf093fb), Color(0xFFf5576c)],
-              ),
-              _buildEnhancedSummaryItem(
-                'Overtime', 
-                '${_todayAttendance?['overtime']?.toStringAsFixed(2) ?? '0.00'}h',
-                Icons.timer,
-                [Color(0xFF11998e), Color(0xFF38ef7d)],
-              ),
-            ],
-          ),
+          _isAttendanceLoading
+              ? Center(
+                  child: CircularProgressIndicator(
+                    valueColor: AlwaysStoppedAnimation<Color>(AppTheme.primaryBlue),
+                  ),
+                )
+              : Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    _buildEnhancedSummaryItem(
+                      'Working Hours',
+                      _todayAttendance?['workingHours'] != null
+                          ? '${_todayAttendance!['workingHours'].toStringAsFixed(2)}h'
+                          : '0.00h',
+                      Icons.work,
+                      [Color(0xFF667eea), Color(0xFF764ba2)],
+                    ),
+                    _buildEnhancedSummaryItem(
+                      'Break Time',
+                      _todayAttendance?['breakTime'] != null
+                          ? '${_todayAttendance!['breakTime']}m'
+                          : '0m',
+                      Icons.coffee,
+                      [Color(0xFFf093fb), Color(0xFFf5576c)],
+                    ),
+                    _buildEnhancedSummaryItem(
+                      'Overtime',
+                      _todayAttendance?['overtime'] != null
+                          ? '${_todayAttendance!['overtime'].toStringAsFixed(2)}h'
+                          : '0.00h',
+                      Icons.timer,
+                      [Color(0xFF11998e), Color(0xFF38ef7d)],
+                    ),
+                  ],
+                ),
           SizedBox(height: 20),
-          Container(
-            padding: EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [Color(0xFFFF9800), Color(0xFFFF5722)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
+          GestureDetector(
+            onTap: () {
+              Navigator.pushNamed(context, '/employee-notice');
+            },
+            child: Container(
+              padding: EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [Color(0xFFFF9800), Color(0xFFFF5722)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: Color(0xFFFF9800).withOpacity(0.3),
+                    blurRadius: 15,
+                    offset: Offset(0, 8),
+                  ),
+                ],
               ),
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(
-                  color: Color(0xFFFF9800).withOpacity(0.3),
-                  blurRadius: 15,
-                  offset: Offset(0, 8),
-                ),
-              ],
-            ),
-            child: Row(
-              children: [
-                Container(
-                  padding: EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(12),
+              child: Row(
+                children: [
+                  Container(
+                    padding: EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(Icons.notifications, color: Colors.white, size: 24),
                   ),
-                  child: Icon(Icons.notifications, color: Colors.white, size: 24),
-                ),
-                SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'New Notices',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
+                  SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'New Notices',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
                         ),
-                      ),
-                      Text(
-                        'Check latest announcements',
-                        style: TextStyle(
-                          color: Colors.white.withOpacity(0.8),
-                          fontSize: 12,
+                        Text(
+                          'Check latest announcements',
+                          style: TextStyle(
+                            color: Colors.white.withOpacity(0.8),
+                            fontSize: 12,
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
-                Icon(Icons.arrow_forward_ios, color: Colors.white, size: 16),
-              ],
+                  Icon(Icons.arrow_forward_ios, color: Colors.white, size: 16),
+                ],
+              ),
             ),
           ),
         ],
@@ -1061,9 +1528,7 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
-          _buildNavItem(Icons.home, 'Home', true, () {
-            // Already on Home
-          }),
+          _buildNavItem(Icons.home, 'Home', true, () {}),
           _buildNavItem(Icons.schedule, 'Schedule', false, () {
             Navigator.pushNamed(context, '/schedule');
           }),
@@ -1084,11 +1549,13 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
       child: Container(
         padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         decoration: BoxDecoration(
-          gradient: isActive ? LinearGradient(
-            colors: [AppTheme.primaryBlue.withOpacity(0.1), AppTheme.lightBlue],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ) : null,
+          gradient: isActive
+              ? LinearGradient(
+                  colors: [AppTheme.primaryBlue.withOpacity(0.1), AppTheme.lightBlue],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                )
+              : null,
           borderRadius: BorderRadius.circular(15),
         ),
         child: Column(
@@ -1110,298 +1577,6 @@ class _DashboardScreenState extends State<DashboardScreen> with WidgetsBindingOb
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  Future<void> _handleClockInOut() async {
-    try {
-      if (_isClockedIn) {
-        await AttendanceService.clockOut();
-        await Future.delayed(Duration(milliseconds: 500));
-        await _loadTodayAttendance();
-        _showSuccessDialog('Clocked out successfully!');
-      } else {
-        await AttendanceService.clockIn();
-        await Future.delayed(Duration(milliseconds: 500));
-        await _loadTodayAttendance();
-        _showSuccessDialog('Clocked in successfully!');
-      }
-    } catch (e) {
-      final errorMessage = e.toString();
-      await Future.delayed(Duration(milliseconds: 500));
-      await _loadTodayAttendance();
-      _showErrorDialog('Failed to update attendance. $errorMessage');
-    }
-  }
-
-  void _showSuccessDialog(String message) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Success'),
-        content: Text(message),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text('OK'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showErrorDialog(String message) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Error'),
-        content: Text(message),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text('OK'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildLocationSection() {
-    return Container(
-      padding: EdgeInsets.all(25),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [Color(0xFF11998e), Color(0xFF38ef7d)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(25),
-        boxShadow: [
-          BoxShadow(
-            color: Color(0xFF11998e).withOpacity(0.4),
-            blurRadius: 20,
-            offset: Offset(0, 10),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Live Location',
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                      letterSpacing: 0.5,
-                    ),
-                  ),
-                  Row(
-                    children: [
-                      Container(
-                        width: 8,
-                        height: 8,
-                        decoration: BoxDecoration(
-                          color: _locationStatus == 'Live' ? Colors.greenAccent : Colors.orange,
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                      SizedBox(width: 8),
-                      Text(
-                        _locationStatus,
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Colors.white.withOpacity(0.9),
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                  if (_currentPosition != null) ...[
-                    SizedBox(height: 4),
-                    Text(
-                      'Lat: ${_currentPosition!.latitude.toStringAsFixed(6)}',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.white.withOpacity(0.8),
-                      ),
-                    ),
-                    Text(
-                      'Lng: ${_currentPosition!.longitude.toStringAsFixed(6)}',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.white.withOpacity(0.8),
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-              Container(
-                padding: EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.2),
-                  borderRadius: BorderRadius.circular(15),
-                ),
-                child: Icon(
-                  Icons.location_on,
-                  color: Colors.white,
-                  size: 28,
-                ),
-              ),
-            ],
-          ),
-          SizedBox(height: 20),
-          Container(
-            height: 150,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(15),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.2),
-                  blurRadius: 10,
-                  offset: Offset(0, 5),
-                ),
-              ],
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(15),
-              child: _isLocationLoading
-                  ? Container(
-                      color: Colors.white.withOpacity(0.2),
-                      child: Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            CircularProgressIndicator(
-                              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                            ),
-                            SizedBox(height: 10),
-                            Text(
-                              'Getting your location...',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 14,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    )
-                  : _currentPosition != null
-                      ? _buildMapWidget()
-                      : Container(
-                          color: Colors.white.withOpacity(0.2),
-                          child: Center(
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(
-                                  Icons.location_off,
-                                  color: Colors.white,
-                                  size: 40,
-                                ),
-                                SizedBox(height: 10),
-                                Text(
-                                  'Location unavailable',
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 14,
-                                  ),
-                                ),
-                                SizedBox(height: 10),
-                                ElevatedButton(
-                                  onPressed: _getCurrentLocation,
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: Colors.white,
-                                    foregroundColor: Color(0xFF11998e),
-                                  ),
-                                  child: Text('Retry'),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildMapWidget() {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.15),
-        borderRadius: BorderRadius.circular(15),
-      ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Container(
-            padding: EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.2),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(
-              Icons.my_location,
-              color: Colors.white,
-              size: 28,
-            ),
-          ),
-          SizedBox(height: 8),
-          Text(
-            'Current Location',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          SizedBox(height: 6),
-          Container(
-            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.2),
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Column(
-              children: [
-                Text(
-                  'Lat: ${_currentPosition!.latitude.toStringAsFixed(4)} | Lng: ${_currentPosition!.longitude.toStringAsFixed(4)}',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          SizedBox(height: 8),
-          Container(
-            padding: EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-            decoration: BoxDecoration(
-              color: Colors.greenAccent.withOpacity(0.3),
-              borderRadius: BorderRadius.circular(15),
-            ),
-            child: Text(
-              'Location Tracking Active',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 10,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        ],
       ),
     );
   }
