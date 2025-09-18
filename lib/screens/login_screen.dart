@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../services/biometric_auth.dart';
 import '../utils/theme.dart';
 import '../services/auth_service.dart';
 import '../widgets/loading_widgets.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import '../screens/dashboard_screen.dart'; // Replace with your actual DashboardScreen import
 
 class LoginScreen extends StatefulWidget {
   @override
@@ -18,6 +21,7 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
   bool _isLoading = false;
   bool _obscurePassword = true;
   bool _isValidating = false;
+  bool showBiometric = false;
   late AnimationController _fadeController;
   late AnimationController _slideController;
   late Animation<double> _fadeAnimation;
@@ -26,6 +30,7 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
   @override
   void initState() {
     super.initState();
+    // Initialize animations
     _fadeController = AnimationController(
       duration: Duration(milliseconds: 800),
       vsync: this,
@@ -34,17 +39,43 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
       duration: Duration(milliseconds: 600),
       vsync: this,
     );
-    
+
     _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(parent: _fadeController, curve: Curves.easeInOut),
     );
     _slideAnimation = Tween<Offset>(begin: Offset(0, 0.3), end: Offset.zero).animate(
       CurvedAnimation(parent: _slideController, curve: Curves.easeOutCubic),
     );
-    
-    // Start animations when screen loads
+
+    // Start animations
     _fadeController.forward();
     _slideController.forward();
+
+    // Check SharedPreferences for biometric login
+    SharedPreferences.getInstance().then((prefs) {
+      bool isLoggedIn = prefs.getBool('isloggedin') ?? false;
+      bool isBiometricEnabled = prefs.getBool('isbiometricenabled') ?? false;
+      print('isLoggedIn: $isLoggedIn, isBiometricEnabled: $isBiometricEnabled'); // Debug print
+      if (isLoggedIn && isBiometricEnabled) {
+        setState(() {
+          showBiometric = true;
+        });
+      } else {
+        setState(() {
+          showBiometric = false;
+        });
+      }
+    });
+
+    // Check biometric availability
+    BiometricAuth().canUseBiometrics().then((canUse) {
+      print('Can use biometrics: $canUse'); // Debug print
+      if (canUse) {
+        setState(() {
+          showBiometric = true; // Show biometric option if device supports it
+        });
+      }
+    });
   }
 
   @override
@@ -64,56 +95,32 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     SizedBox(height: 40),
-                   Center(
-  child: Container(
-    height: 120,
-    child: Image.network(
-      'https://i.postimg.cc/TPV5kJKb/Frame-3.png',
-      errorBuilder: (context, error, stackTrace) {
-        return Container(
-          height: 120,
-          decoration: BoxDecoration(
-            color: AppTheme.lightBlue,
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Icon(
-            Icons.people,
-            size: 60,
-            color: AppTheme.primaryBlue,
-          ),
-        );
-      },
-    ),
-  ),
-),
-              SizedBox(height: 40),
-Center(
-  child: Container(
-    height: 120,
-    child: Image.network(
-      'https://i.postimg.cc/sgPLsb80/Peoples.png',
-      errorBuilder: (context, error, stackTrace) {
-        return Container(
-          height: 120,
-          decoration: BoxDecoration(
-            color: AppTheme.lightBlue,
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Icon(
-            Icons.people,
-            size: 60,
-            color: AppTheme.primaryBlue,
-          ),
-        );
-      },
-    ),
-  ),
-),
-
-Center(
-  child: Text(dotenv.env['API_URL'] ?? 'API_URL Not Found'),
-),
-
+                    Center(
+                      child: Container(
+                        height: 120,
+                        child: Image.network(
+                          'https://i.postimg.cc/TPV5kJKb/Frame-3.png',
+                          errorBuilder: (context, error, stackTrace) {
+                            return Container(
+                              height: 120,
+                              decoration: BoxDecoration(
+                                color: AppTheme.lightBlue,
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Icon(
+                                Icons.people,
+                                size: 60,
+                                color: AppTheme.primaryBlue,
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+                    SizedBox(height: 40),
+                    Center(
+                      child: Text(dotenv.env['API_URL'] ?? 'API_URL Not Found'),
+                    ),
                     SizedBox(height: 40),
                     TweenAnimationBuilder(
                       duration: Duration(milliseconds: 600),
@@ -167,12 +174,12 @@ Center(
                                     decoration: InputDecoration(
                                       labelText: 'Employee ID',
                                       prefixIcon: Icon(Icons.badge, color: AppTheme.primaryBlue),
-                                      suffixIcon: _isValidating 
-                                        ? Padding(
-                                            padding: EdgeInsets.all(12),
-                                            child: LoadingWidgets.primaryLoader(size: 20),
-                                          )
-                                        : null,
+                                      suffixIcon: _isValidating
+                                          ? Padding(
+                                              padding: EdgeInsets.all(12),
+                                              child: LoadingWidgets.primaryLoader(size: 20),
+                                            )
+                                          : null,
                                     ),
                                     validator: (value) {
                                       if (value == null || value.isEmpty) {
@@ -219,11 +226,13 @@ Center(
                                               _obscurePassword ? Icons.visibility : Icons.visibility_off,
                                               color: AppTheme.primaryBlue,
                                             ),
-                                            onPressed: _isLoading ? null : () {
-                                              setState(() {
-                                                _obscurePassword = !_obscurePassword;
-                                              });
-                                            },
+                                            onPressed: _isLoading
+                                                ? null
+                                                : () {
+                                                    setState(() {
+                                                      _obscurePassword = !_obscurePassword;
+                                                    });
+                                                  },
                                           ),
                                         ],
                                       ),
@@ -239,6 +248,37 @@ Center(
                               );
                             },
                           ),
+                          if (showBiometric)
+                            GestureDetector(
+                              onTap: () => BiometricAuth().checkBiometric(
+                                context,
+                                DashboardScreen(), // Navigate to DashboardScreen on success
+                                LoginScreen(), // Stay on LoginScreen if failed
+                                true,
+                              ),
+                              child: Padding(
+                                padding: EdgeInsets.symmetric(vertical: 16),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      Icons.fingerprint,
+                                      color: AppTheme.primaryBlue, // Match theme for visibility
+                                      size: 30,
+                                    ),
+                                    SizedBox(width: 10),
+                                    Text(
+                                      'Tap to login with biometric',
+                                      style: TextStyle(
+                                        color: AppTheme.primaryBlue,
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
                           SizedBox(height: 16),
                           TweenAnimationBuilder(
                             duration: Duration(milliseconds: 600),
@@ -249,9 +289,11 @@ Center(
                                 child: Align(
                                   alignment: Alignment.centerRight,
                                   child: TextButton(
-                                    onPressed: _isLoading ? null : () {
-                                      Navigator.pushNamed(context, '/forgot-password');
-                                    },
+                                    onPressed: _isLoading
+                                        ? null
+                                        : () {
+                                            Navigator.pushNamed(context, '/forgot-password');
+                                          },
                                     child: Text(
                                       'Forgot Password?',
                                       style: TextStyle(color: AppTheme.primaryBlue),
@@ -284,42 +326,6 @@ Center(
                         ],
                       ),
                     ),
-                    // SizedBox(height: 40),
-                    // TweenAnimationBuilder(
-                    //   duration: Duration(milliseconds: 800),
-                    //   tween: Tween<double>(begin: 0, end: 1),
-                    //   builder: (context, double value, child) {
-                    //     return Transform.translate(
-                    //       offset: Offset(0, 30 * (1 - value)),
-                    //       child: Opacity(
-                    //         opacity: value,
-                    //         child: Container(
-                    //           padding: EdgeInsets.all(16),
-                    //           decoration: BoxDecoration(
-                    //             color: AppTheme.lightBlue,
-                    //             borderRadius: BorderRadius.circular(12),
-                    //           ),
-                    //           child: Column(
-                    //             crossAxisAlignment: CrossAxisAlignment.start,
-                    //             children: [
-                    //               Text(
-                    //                 'Demo Credentials:',
-                    //                 style: TextStyle(
-                    //                   fontWeight: FontWeight.bold,
-                    //                   color: AppTheme.darkGray,
-                    //                 ),
-                    //               ),
-                    //               SizedBox(height: 8),
-                    //               Text('Admin: admin123 / admin@123'),
-                    //               Text('HR: hr123 / hr@123'),
-                    //               Text('Employee: emp001 / emp@123'),
-                    //             ],
-                    //           ),
-                    //         ),
-                    //       ),
-                    //     );
-                    //   },
-                    // ),
                   ],
                 ),
               ),
@@ -344,7 +350,7 @@ Center(
 
     try {
       await Future.delayed(Duration(milliseconds: 300));
-      
+
       final response = await AuthService.login(
         _employeeIdController.text,
         _passwordController.text,
@@ -352,7 +358,12 @@ Center(
 
       if (response['success']) {
         await Future.delayed(Duration(milliseconds: 500));
-        
+
+        // Save login state to SharedPreferences
+        SharedPreferences prefs = await SharedPreferences.getInstance();
+        await prefs.setBool('isloggedin', true);
+        await prefs.setBool('isbiometricenabled', true); // Enable biometrics on successful login
+
         final userRole = response['user']['role'];
         if (userRole == 'admin' || userRole == 'hr') {
           Navigator.pushReplacementNamed(context, '/admin');
