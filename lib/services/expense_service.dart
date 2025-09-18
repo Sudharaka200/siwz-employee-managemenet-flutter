@@ -2,6 +2,41 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:employee_attendance/services/auth_service.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+
+class AuthService {
+  static const String _tokenKey = 'auth_token';
+  static SharedPreferences? _prefs;
+
+  /// Initializes the AuthService by loading SharedPreferences.
+  static Future<void> init() async {
+    _prefs ??= await SharedPreferences.getInstance();
+  }
+
+  /// Retrieves the authentication token from storage.
+  static Future<String?> getToken() async {
+    await init(); // Ensure SharedPreferences is initialized
+    return _prefs?.getString(_tokenKey);
+  }
+
+  /// Saves the authentication token to storage.
+  static Future<void> saveToken(String token) async {
+    await init();
+    await _prefs?.setString(_tokenKey, token);
+  }
+
+  /// Clears the authentication token from storage.
+  static Future<void> clearToken() async {
+    await init();
+    await _prefs?.remove(_tokenKey);
+  }
+
+  /// Checks if the user is authenticated (i.e., token exists).
+  static Future<bool> isAuthenticated() async {
+    return await getToken() != null;
+  }
+}
 
 class ExpenseService {
     static String get _baseUrl {

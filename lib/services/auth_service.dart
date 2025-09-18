@@ -1,12 +1,12 @@
-import 'dart:convert';
 import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:convert';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class AuthService {
   // Base URL from .env
   static String get baseUrl {
-    return dotenv.env['API_URL'] ?? 'http://localhost:3000/api'; // Fallback URL
+    return dotenv.env['API_URL'] ?? 'Invalid API Call'; // Fallback URL
   }
 
   static String? _token;
@@ -37,29 +37,45 @@ class AuthService {
   }
 
   // Login method
-  static Future<Map<String, dynamic>> login(String email, String password) async {
+  static Future<Map<String, dynamic>> login(String employeeId, String password) async {
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/login'),
+        Uri.parse('$baseUrl/auth/login'), // Updated to match expected endpoint
         headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'email': email, 'password': password}),
+        body: jsonEncode({'employeeId': employeeId, 'password': password}),
       );
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
+        if (data['success'] != true) {
+          return {
+            'success': false,
+            'message': data['message'] ?? 'Login failed',
+          };
+        }
+
         _token = data['token'];
-        _user = data['user']; // Assuming backend returns user data
+        _user = data['user'] ?? {'role': 'employee'}; // Fallback role if missing
+
+        // Validate user role
+        if (_user?['role'] == null) {
+          _user?['role'] = 'employee'; // Default role if not provided
+        }
 
         final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('jwt_token', _token!);
+        await prefs.setString('jwt_token', _token ?? '');
         await prefs.setBool('is_logged_in', true);
         if (_user != null) {
           await prefs.setString('user_data', jsonEncode(_user));
         }
 
-        return {'success': true, 'user': _user};
+        return {
+          'success': true,
+          'user': _user,
+          'message': data['message'] ?? 'Login successful',
+        };
       } else {
-        final error = jsonDecode(response.body)['message'] ?? 'Login failed';
+        final error = jsonDecode(response.body)['message'] ?? 'Invalid credentials';
         return {'success': false, 'message': error};
       }
     } catch (e) {
@@ -72,19 +88,21 @@ class AuthService {
   static Future<Map<String, dynamic>> logout() async {
     try {
       // Optional: Call backend logout endpoint if required
-      // final response = await http.post(
-      //   Uri.parse('$baseUrl/logout'),
-      //   headers: getAuthHeaders(),
-      // );
-      // if (response.statusCode != 200) {
-      //   return {'success': false, 'message': 'Logout failed'};
-      // }
+      final response = await http.post(
+        Uri.parse('$baseUrl/auth/logout'),
+        headers: getAuthHeaders(),
+      );
+      if (response.statusCode != 200) {
+        print('Backend logout failed: ${response.body}');
+        // Proceed with local logout even if backend fails
+      }
 
       await _clearAuthData();
       return {'success': true, 'message': 'Logged out successfully'};
     } catch (e) {
       print('Logout error: $e');
-      return {'success': false, 'message': 'Logout error: $e'};
+      await _clearAuthData(); // Clear local data even on error
+      return {'success': true, 'message': 'Logged out successfully (local)'};
     }
   }
 
@@ -111,7 +129,7 @@ class AuthService {
 
     try {
       final response = await http.get(
-        Uri.parse('$baseUrl/profile'), // Adjust endpoint as needed
+        Uri.parse('$baseUrl/auth/profile'), // Updated to match expected endpoint
         headers: getAuthHeaders(),
       );
       if (response.statusCode == 200) {
